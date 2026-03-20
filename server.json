@@ -1,0 +1,30 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.iamtouchskyer/memex",
+  "description": "Zettelkasten-based agent memory system with bidirectional links",
+  "repository": {
+    "url": "https://github.com/iamtouchskyer/memex",
+    "source": "github"
+  },
+  "version": "0.1.4",
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "@touchskyer/memex",
+      "version": "0.1.4",
+      "transport": {
+        "type": "stdio",
+        "args": ["mcp"]
+      },
+      "environmentVariables": [
+        {
+          "description": "Custom data directory for memex cards (default: ~/.memex)",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": false,
+          "name": "MEMEX_HOME"
+        }
+      ]
+    }
+  ]
+}

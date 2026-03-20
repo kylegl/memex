@@ -1,6 +1,7 @@
 {
   "name": "@touchskyer/memex",
-  "version": "0.1.3",
+  "mcpName": "io.github.iamtouchskyer/memex",
+  "version": "0.1.4",
   "description": "Zettelkasten-based agent memory system with bidirectional links",
   "type": "module",
   "bin": {
