@@ -18,86 +18,30 @@ No vector database, no embeddings — just markdown files your agent (and you) c
 
 ## Install
 
-### Any editor (one command)
+| Platform | Command |
+|----------|---------|
+| **Any editor** | `npx add-mcp @touchskyer/memex -- mcp` |
+| **Claude Code** | `/plugin marketplace add iamtouchskyer/memex` then `/plugin install memex@memex` |
+| **VS Code / Copilot** | [Install from MCP Registry](https://registry.modelcontextprotocol.io) or `code --add-mcp '{"name":"memex","command":"npx","args":["-y","@touchskyer/memex","mcp"]}'` |
+| **Cursor** | [One-click install](cursor://anysphere.cursor-deeplink/mcp/install?name=memex&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsIkB0b3VjaHNreWVyL21lbWV4IiwibWNwIl19) |
+| **Codex** | `codex mcp add memex -- npx -y @touchskyer/memex mcp` |
+| **Windsurf / others** | Add MCP server: command `npx`, args `["-y", "@touchskyer/memex", "mcp"]` |
 
-```bash
-npx add-mcp @touchskyer/memex -- mcp
-```
-
-Supports Claude Code, Cursor, Codex, VS Code, Gemini CLI, Goose, Zed, and more. Auto-detects your editor.
-
-### Claude Code (best experience)
-
-```bash
-/plugin marketplace add iamtouchskyer/memex
-/plugin install memex@memex
-```
-
-Gives you auto-recall on session start, 3 slash commands (`/memex-recall`, `/memex-retro`, `/memex-organize`), and a SessionStart hook that injects your knowledge index.
-
-### VS Code / GitHub Copilot
-
-Search "memex" in the [MCP Registry](https://registry.modelcontextprotocol.io) and click **Install in VS Code**, or run:
-
-```bash
-code --add-mcp '{"name":"memex","command":"npx","args":["-y","@touchskyer/memex","mcp"]}'
-```
-
-### Cursor
-
-[**One-click install**](cursor://anysphere.cursor-deeplink/mcp/install?name=memex&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsIkB0b3VjaHNreWVyL21lbWV4IiwibWNwIl19)
-
-Or via command:
-
-```bash
-codex mcp add memex -- npx -y @touchskyer/memex mcp
-```
-
-### Codex
-
-```bash
-codex mcp add memex -- npx -y @touchskyer/memex mcp
-```
-
-### Windsurf / Other MCP clients
-
-Add memex as an MCP server with command `npx` and args `["-y", "@touchskyer/memex", "mcp"]`.
-
-### Add agent instructions (recommended for MCP users)
-
-After installing the MCP server, run this in your project directory:
+**Then, in your project directory:**
 
 ```bash
 npx @touchskyer/memex init
 ```
 
-This adds a memex section to your `AGENTS.md` that teaches the agent when to recall and retro. Supported by Cursor, Copilot, Codex, and Windsurf.
+This adds a memex section to `AGENTS.md` that teaches your agent when to recall and retro. Works with Cursor, Copilot, Codex, and Windsurf. Claude Code users don't need this — the plugin handles it.
 
 ## Upgrade
 
-### Claude Code
-
-```bash
-npm update -g @touchskyer/memex
-```
-
-Plugin skills and hooks update automatically from the marketplace.
-
-### VS Code / Copilot / Cursor / Windsurf
-
-If you installed via `npx` (recommended), you're always on the latest — `npx -y` fetches the newest version automatically.
-
-To force a cache refresh:
-
-```bash
-npx -y @touchskyer/memex@latest mcp
-```
-
-### Codex / global install
-
-```bash
-npm update -g @touchskyer/memex
-```
+| Platform | How |
+|----------|-----|
+| **npx users** (VS Code, Cursor, Windsurf) | Automatic — `npx -y` always fetches latest |
+| **Claude Code** | `npm update -g @touchskyer/memex` (plugin updates from marketplace) |
+| **Codex / global install** | `npm update -g @touchskyer/memex` |
 
 ## Browse your memory
 
