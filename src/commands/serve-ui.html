@@ -1840,14 +1840,18 @@ body::-webkit-scrollbar { display: none; }
     const vw = window.innerWidth, vh = window.innerHeight;
     const maxH = vh - m * 2;
 
+    // Horizontal: prefer right of node, fallback left
     let left = sx + activeCardNode.displayR * cam.zoom + m;
     if (left + panelW > vw - m) left = sx - activeCardNode.displayR * cam.zoom - panelW - m;
     left = Math.max(m, Math.min(vw - panelW - m, left));
 
-    const panelH = Math.min(cardPanel.scrollHeight || 200, maxH);
-    let top = sy - 40;
-    top = Math.min(top, vh - panelH - m);
-    top = Math.max(m, top);
+    // Vertical: when expanded, pin to top so scrolling works; when collapsed, near node
+    let top;
+    if (graphCardExpanded) {
+      top = m;
+    } else {
+      top = Math.max(m, Math.min(sy - 40, vh - 200));
+    }
 
     cardPanel.style.left = left + 'px';
     cardPanel.style.top = top + 'px';
