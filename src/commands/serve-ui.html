@@ -759,24 +759,19 @@ body::-webkit-scrollbar { display: none; }
 
 .graph-card-panel {
   position: absolute;
-  top: 16px;
-  right: 16px;
-  width: 340px;
-  max-height: calc(100vh - 32px);
-  overflow-y: auto;
+  width: 320px;
   z-index: 20;
   display: none;
-  scrollbar-width: none;
   opacity: 0;
-  transform: translateX(20px);
-  transition: opacity 0.25s, transform 0.3s cubic-bezier(0.34,1.2,0.64,1);
+  transform: scale(0.95) translateY(4px);
+  transition: opacity 0.2s, transform 0.25s cubic-bezier(0.34,1.2,0.64,1);
+  pointer-events: auto;
 }
 .graph-card-panel.open {
   display: block;
   opacity: 1;
-  transform: translateX(0);
+  transform: scale(1) translateY(0);
 }
-.graph-card-panel::-webkit-scrollbar { display: none; }
 /* Override card styles inside graph */
 .graph-card-panel .card {
   cursor: default;
@@ -1813,9 +1808,11 @@ body::-webkit-scrollbar { display: none; }
 
   // Popover
   const cardPanel = document.getElementById('graphCardPanel');
-  const { renderMarkdown: rmd, esc: gEsc, bodyCache: gBodyCache, sourceColors: gSrcColors } = window._memex || {};
+  const mx = window._memex || {};
+  let graphCardExpanded = false;
 
-  async function showPopover(node) {
+  function showPopover(node) {
+    const rmd = mx.renderMarkdown, gEsc = mx.esc, gSrcColors = mx.sourceColors;
     const src = (node.source || '').toLowerCase();
     const badgeClass = (gSrcColors || {})[src] || 'default';
     const badgeLabel = src || 'note';
@@ -1824,55 +1821,111 @@ body::-webkit-scrollbar { display: none; }
       '<span class="chip" data-link="' + gEsc(l) + '">[[' + gEsc(l) + ']]</span>'
     ).join('');
 
-    // Load body
-    let bodyHtml = '';
-    if (gBodyCache && gBodyCache[node.id]) {
-      bodyHtml = rmd(gBodyCache[node.id]);
-    } else {
-      try {
-        const res = await fetch('/api/cards/' + encodeURIComponent(node.id));
-        const raw = await res.text();
-        const stripped = raw.replace(/^---[\s\S]*?---\n?/, '').trim();
-        if (gBodyCache) gBodyCache[node.id] = stripped;
-        bodyHtml = rmd(stripped);
-      } catch { bodyHtml = '<p>' + gEsc(node.firstLine || '') + '</p>'; }
-    }
+    graphCardExpanded = false;
 
+    // Start collapsed — same as timeline card
     cardPanel.innerHTML =
-      '<div class="card expanded" style="animation:none;cursor:default">'
+      '<div class="card" data-graph-slug="' + gEsc(node.id) + '" style="animation:none">'
       + '<div class="card-header">'
       + '<span class="source-badge ' + badgeClass + '">' + gEsc(badgeLabel) + '</span>'
       + '<span class="card-dot">\u00b7</span>'
       + '<span class="card-time">' + gEsc(time) + '</span>'
       + '</div>'
       + '<div class="card-title">' + gEsc(node.title) + '</div>'
-      + '<div class="card-body" style="max-height:none;opacity:1;margin-top:8px"><div class="card-body-inner">'
-      + bodyHtml
-      + '</div>'
+      + '<div class="card-preview">' + gEsc(node.firstLine || '') + '</div>'
+      + (chips ? '<div class="card-links">' + chips + '</div>' : '')
+      + '<div class="card-body"><div class="card-body-inner" id="graph-body-' + gEsc(node.id) + '"></div>'
       + '<button class="share-btn" onclick="event.stopPropagation();shareCard(\'' + gEsc(node.id) + '\')">Share</button>'
       + '</div>'
       + '</div>';
 
+    // Position near node
+    positionCardPanel(node);
     cardPanel.classList.add('open');
 
-    // Bind chip clicks to navigate graph
-    cardPanel.querySelectorAll('.chip').forEach(chip => {
+    // Click card to expand (like timeline)
+    const cardEl = cardPanel.querySelector('.card');
+    cardEl.addEventListener('click', async (e) => {
+      if (e.target.closest('.chip') || e.target.closest('.share-btn')) return;
+      if (graphCardExpanded) return;
+      graphCardExpanded = true;
+      cardEl.classList.add('expanded');
+
+      const bodyEl = document.getElementById('graph-body-' + node.id);
+      const gBodyCache = mx.bodyCache;
+      if (gBodyCache && gBodyCache[node.id]) {
+        bodyEl.innerHTML = rmd(gBodyCache[node.id]);
+      } else {
+        bodyEl.innerHTML = '<span class="loading-text">Loading...</span>';
+        try {
+          const res = await fetch('/api/cards/' + encodeURIComponent(node.id));
+          const raw = await res.text();
+          const stripped = raw.replace(/^---[\s\S]*?---\n?/, '').trim();
+          if (gBodyCache) gBodyCache[node.id] = stripped;
+          bodyEl.innerHTML = rmd(stripped);
+        } catch { bodyEl.innerHTML = '<p>' + gEsc(node.firstLine || '') + '</p>'; }
+      }
+
+      // Bind body chips
+      bodyEl.querySelectorAll('.chip').forEach(c => {
+        c.addEventListener('click', (ev) => {
+          ev.stopPropagation();
+          navigateGraphNode(c.dataset.link);
+        });
+      });
+    });
+
+    // Bind header chips to navigate graph
+    cardPanel.querySelectorAll('.card-links .chip').forEach(chip => {
       chip.addEventListener('click', (e) => {
         e.stopPropagation();
-        const tid = chip.dataset.link;
-        const target = gNodes.find(n => n.id === tid);
-        if (target) {
-          hidePopover();
-          selectedId = tid;
-          camTarget.x = -target.x;
-          camTarget.y = -target.y;
-          setTimeout(() => showPopover(target), 350);
-        }
+        navigateGraphNode(chip.dataset.link);
       });
     });
   }
 
-  function hidePopover() { cardPanel.classList.remove('open'); }
+  function navigateGraphNode(slug) {
+    const target = gNodes.find(n => n.id === slug);
+    if (target) {
+      hidePopover();
+      selectedId = slug;
+      camTarget.x = -target.x;
+      camTarget.y = -target.y;
+      setTimeout(() => showPopover(target), 350);
+    }
+  }
+
+  function positionCardPanel(node) {
+    const [sx, sy] = toScreen(node.x, node.y);
+    const panelW = 320;
+    const vw = window.innerWidth, vh = window.innerHeight;
+
+    // Prefer right of node, fallback to left
+    let left = sx + node.displayR * cam.zoom + 16;
+    if (left + panelW > vw - 16) {
+      left = sx - node.displayR * cam.zoom - panelW - 16;
+    }
+    left = Math.max(16, Math.min(vw - panelW - 16, left));
+
+    // Vertically center on node, clamp to viewport
+    let top = sy - 60;
+    top = Math.max(16, Math.min(vh - 300, top));
+
+    cardPanel.style.left = left + 'px';
+    cardPanel.style.top = top + 'px';
+  }
+
+  function hidePopover() {
+    cardPanel.classList.remove('open');
+    graphCardExpanded = false;
+  }
+
+  // Reposition on camera move
+  setInterval(() => {
+    if (!selectedId || !cardPanel.classList.contains('open')) return;
+    const node = gNodes.find(n => n.id === selectedId);
+    if (node) positionCardPanel(node);
+  }, 16);
 
   // Events
   canvas.addEventListener('mousedown', (e) => {
