@@ -713,11 +713,12 @@ body::-webkit-scrollbar { display: none; }
 
 /* === Graph view === */
 .graph-container {
-  flex: 1;
-  position: relative;
+  position: absolute;
+  inset: 0;
+  z-index: 100;
   overflow: hidden;
   background: #0a0a0f;
-  border-radius: 0 0 13px 0;
+  border-radius: 13px;
 }
 .graph-container canvas {
   position: absolute;
@@ -791,6 +792,27 @@ body::-webkit-scrollbar { display: none; }
 .graph-pop-chip { font-size: 10px; color: #5ac8fa; background: rgba(90,200,250,0.08); padding: 3px 8px; border-radius: 10px; cursor: pointer; transition: background 0.15s; user-select: none; }
 .graph-pop-chip:hover { background: rgba(90,200,250,0.18); }
 
+.graph-back-btn {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  border: none;
+  border-radius: 8px;
+  background: rgba(255,255,255,0.06);
+  color: rgba(255,255,255,0.6);
+  font-size: 12px;
+  font-weight: 500;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.graph-back-btn:hover { background: rgba(255,255,255,0.12); }
+
 .graph-orphan-badge { position: absolute; bottom: 16px; right: 16px; font-size: 11px; color: rgba(255,255,255,0.2); background: rgba(255,255,255,0.04); padding: 5px 10px; border-radius: 6px; }
 .graph-hint { position: absolute; bottom: 16px; left: 16px; font-size: 10px; color: rgba(255,255,255,0.15); letter-spacing: 0.5px; }
 
@@ -840,22 +862,26 @@ body::-webkit-scrollbar { display: none; }
       <ul class="cat-list" id="cat-list"></ul>
     </aside>
     <div class="main" id="timeline"></div>
-    <div class="graph-container" id="graphContainer" style="display:none">
-      <canvas id="graphCanvas"></canvas>
-      <div class="graph-search-wrap">
-        <svg class="graph-search-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="8.5" cy="8.5" r="5.5"/><line x1="13" y1="13" x2="17" y2="17"/></svg>
-        <input type="text" class="graph-search" placeholder="Search nodes..." id="graphSearch">
-      </div>
-      <div class="graph-popover" id="graphPopover">
-        <div class="graph-popover-arrow" id="graphPopArrow"></div>
-        <div class="graph-pop-title" id="graphPopTitle"></div>
-        <div class="graph-pop-meta" id="graphPopMeta"></div>
-        <div class="graph-pop-body" id="graphPopBody"></div>
-        <div class="graph-pop-links" id="graphPopLinks"></div>
-      </div>
-      <div class="graph-orphan-badge" id="graphOrphanBadge"></div>
-      <div class="graph-hint">CLICK TO INSPECT · DRAG TO PAN · SCROLL TO ZOOM</div>
+  </div>
+  <div class="graph-container" id="graphContainer" style="display:none">
+    <canvas id="graphCanvas"></canvas>
+    <button class="graph-back-btn" id="graphBackBtn" onclick="document.getElementById('viewTimeline').click()">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
+      Back
+    </button>
+    <div class="graph-search-wrap">
+      <svg class="graph-search-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="8.5" cy="8.5" r="5.5"/><line x1="13" y1="13" x2="17" y2="17"/></svg>
+      <input type="text" class="graph-search" placeholder="Search nodes..." id="graphSearch">
     </div>
+    <div class="graph-popover" id="graphPopover">
+      <div class="graph-popover-arrow" id="graphPopArrow"></div>
+      <div class="graph-pop-title" id="graphPopTitle"></div>
+      <div class="graph-pop-meta" id="graphPopMeta"></div>
+      <div class="graph-pop-body" id="graphPopBody"></div>
+      <div class="graph-pop-links" id="graphPopLinks"></div>
+    </div>
+    <div class="graph-orphan-badge" id="graphOrphanBadge"></div>
+    <div class="graph-hint">CLICK TO INSPECT · DRAG TO PAN · SCROLL TO ZOOM</div>
   </div>
 </div>
 
@@ -1261,7 +1287,6 @@ body::-webkit-scrollbar { display: none; }
     currentView = view;
     viewTimelineBtn.classList.toggle('active', view === 'timeline');
     viewGraphBtn.classList.toggle('active', view === 'graph');
-    timeline.style.display = view === 'timeline' ? '' : 'none';
     graphContainer.style.display = view === 'graph' ? '' : 'none';
     if (view === 'graph') initGraph();
   }
