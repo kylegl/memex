@@ -168,6 +168,14 @@ export async function serveCommand(port: number): Promise<Server> {
         return;
       }
 
+      if (url.pathname === "/share-card.js") {
+        const js = await readFile(join(__dirname, "..", "share-card", "share-card.js"), "utf-8");
+        const wrapped = `(function(){\n${js}\nwindow.createShareCard = createShareCard;\n})();`;
+        res.writeHead(200, { "Content-Type": "application/javascript; charset=utf-8" });
+        res.end(wrapped);
+        return;
+      }
+
       if (url.pathname === "/" || url.pathname === "/index.html") {
         let html = await getHTML();
         html = injectBanner(html);
