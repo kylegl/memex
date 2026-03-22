@@ -94,14 +94,14 @@ export function registerOperations(
 
   // ---- pull ----
   server.registerTool("memex_pull", {
-    description: "Pull latest cards from remote. Use to get changes from other devices.",
+    description: "Pull latest cards from remote to get changes from other devices. If sync is not configured, tell the user to run in terminal: memex sync --init git@github.com:<user>/memex-cards.git && memex sync on",
     inputSchema: z.object({}),
   }, async () => {
     await hooks.run("pre", "pull");
 
     const config = await readSyncConfig(home);
     if (!config.remote) {
-      return { content: [{ type: "text" as const, text: "Sync not configured. Run `memex init` to set up." }] };
+      return { content: [{ type: "text" as const, text: "Sync not configured. Tell the user to run in terminal: memex sync --init git@github.com:<user>/memex-cards.git && memex sync on" }] };
     }
     const adapter = new GitAdapter(home);
     const result = await adapter.pull();
@@ -113,14 +113,14 @@ export function registerOperations(
 
   // ---- push ----
   server.registerTool("memex_push", {
-    description: "Push local cards to remote. Use after writing cards to sync to other devices.",
+    description: "Push local cards to remote to sync to other devices. If sync is not configured, tell the user to run in terminal: memex sync --init git@github.com:<user>/memex-cards.git && memex sync on",
     inputSchema: z.object({}),
   }, async () => {
     await hooks.run("pre", "push");
 
     const config = await readSyncConfig(home);
     if (!config.remote) {
-      return { content: [{ type: "text" as const, text: "Sync not configured. Run `memex init` to set up." }] };
+      return { content: [{ type: "text" as const, text: "Sync not configured. Tell the user to run in terminal: memex sync --init git@github.com:<user>/memex-cards.git && memex sync on" }] };
     }
     const adapter = new GitAdapter(home);
     const result = await adapter.push();
@@ -132,7 +132,7 @@ export function registerOperations(
 
   // ---- init ----
   server.registerTool("memex_init", {
-    description: "Set up memex in the current project. Creates AGENTS.md with memory workflow instructions.",
+    description: "Optional: Create or update AGENTS.md in the current project with memex workflow instructions. This is NOT required — tool descriptions already guide agent behavior. Only use this if the editor benefits from per-project AGENTS.md (e.g. Codex). For cross-device sync setup, tell the user to run: memex sync --init <remote> && memex sync on",
     inputSchema: z.object({
       dir: z.string().optional().describe("Project directory (defaults to cwd)"),
     }),
