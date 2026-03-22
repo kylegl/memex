@@ -48,7 +48,8 @@ digraph retro {
 ---
 title: <descriptive title>
 created: <today's date YYYY-MM-DD>
-source: retro
+source: <auto-filled by client>
+category: <optional category>
 ---
 
 <One atomic insight, written in your own words.>
@@ -67,4 +68,4 @@ Note: You do NOT need to include `modified` — the CLI auto-sets it on write.
   - Bad: "Related: [[jwt-migration]]"
 - **Slug**: English kebab-case, descriptive. e.g., `jwt-revocation-blacklist-pattern`
 - **Don't over-record**: Only save insights that would change how you approach a similar task in the future.
-- **Preserve source on update**: When updating an existing card, preserve its original frontmatter fields (title, created, source). Only append to the body.
+- **Preserve frontmatter on update**: When updating an existing card, preserve its original frontmatter fields (title, created). Only append to the body. `source` is auto-managed by the MCP server.

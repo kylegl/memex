@@ -22,8 +22,8 @@ describe("initCommand", () => {
 
     const content = await readFile(join(tmpDir, "AGENTS.md"), "utf-8");
     expect(content).toContain("## Memory (memex)");
-    expect(content).toContain("memex_search");
-    expect(content).toContain("memex_sync");
+    expect(content).toContain("memex_recall");
+    expect(content).toContain("memex_retro");
   });
 
   it("appends to existing AGENTS.md", async () => {
