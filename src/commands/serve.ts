@@ -15,12 +15,14 @@ const __dirname = dirname(__filename);
 const MEMRA_URL = "https://memra.vercel.app";
 
 let cachedHTML: string | null = null;
+let cachedHTMLWithBanner: string | null = null;
 
-async function getHTML(): Promise<string> {
+async function getHTML(withBanner: boolean): Promise<string> {
   if (!cachedHTML) {
     cachedHTML = await readFile(join(__dirname, "serve-ui.html"), "utf-8");
+    cachedHTMLWithBanner = injectBanner(cachedHTML);
   }
-  return cachedHTML;
+  return withBanner ? cachedHTMLWithBanner! : cachedHTML;
 }
 
 function injectBanner(html: string): string {
@@ -43,7 +45,7 @@ function injectBanner(html: string): string {
   return html.replace("<body>", "<body>" + banner);
 }
 
-export async function serveCommand(port: number): Promise<Server> {
+export async function serveCommand(port: number): Promise<Server | null> {
   const home = process.env.MEMEX_HOME || join(homedir(), ".memex");
 
   // Check if synced to GitHub → redirect to online
@@ -51,14 +53,13 @@ export async function serveCommand(port: number): Promise<Server> {
   if (syncConfig.remote) {
     console.log(`Cards synced to ${syncConfig.remote}`);
     console.log(`Opening ${MEMRA_URL}...`);
-    const bin = process.platform === "darwin" ? "open"
-      : process.platform === "win32" ? "start"
-      : "xdg-open";
-    execFile(bin, [MEMRA_URL], () => {});
-    // Return a dummy server that immediately closes
-    const server = createServer();
-    server.listen(0, () => server.close());
-    return server;
+    if (!process.env.MEMEX_NO_OPEN) {
+      const bin = process.platform === "darwin" ? "open"
+        : process.platform === "win32" ? "start"
+        : "xdg-open";
+      execFile(bin, [MEMRA_URL], () => {});
+    }
+    return null;
   }
 
   // No sync — serve locally with banner
@@ -170,15 +171,15 @@ export async function serveCommand(port: number): Promise<Server> {
 
       if (url.pathname === "/share-card.js") {
         const js = await readFile(join(__dirname, "..", "share-card", "share-card.js"), "utf-8");
-        const wrapped = `(function(){\n${js}\nwindow.createShareCard = createShareCard;\n})();`;
+        const stripped = js.replace(/^export /gm, "");
+        const wrapped = `(function(){\n${stripped}\nwindow.createShareCard = createShareCard;\n})();`;
         res.writeHead(200, { "Content-Type": "application/javascript; charset=utf-8" });
         res.end(wrapped);
         return;
       }
 
       if (url.pathname === "/" || url.pathname === "/index.html") {
-        let html = await getHTML();
-        html = injectBanner(html);
+        const html = await getHTML(true);
         res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
         res.end(html);
         return;
