@@ -1,42 +1,76 @@
 # Memex - Agent Memory
 
-Persistent Zettelkasten memory for AI coding agents.
+Persistent memory for AI coding agents. Your agent remembers what it learned across sessions.
+
+![memex timeline view](https://raw.githubusercontent.com/iamtouchskyer/memex/main/screenshot.png)
 
 ## What it does
 
-Memex gives your AI coding agent (GitHub Copilot, Cursor, Claude Code) a persistent memory that survives across sessions. Every insight from your AI conversations gets distilled into atomic knowledge cards with bidirectional links.
+Every time your AI agent finishes a task, it saves insights as atomic knowledge cards with `[[bidirectional links]]`. Next session, it recalls relevant cards before starting work — building on what it already knows instead of starting from scratch.
 
-## How it works
+No vector database, no embeddings — just markdown files your agent (and you) can read.
 
-This extension registers a **MCP (Model Context Protocol) server** that provides your AI agent with tools to:
+## MCP Tools
 
-- **`memex_search`** — Search your knowledge cards by keyword
-- **`memex_read`** — Read a card's full content
-- **`memex_write`** — Write a new card or update an existing one
+This extension registers a MCP server that gives your AI agent 6 tools:
 
-Cards are stored locally in `~/.memex/cards/` as plain Markdown files.
+| Tool | Description |
+|------|-------------|
+| `memex_search` | Search cards by keyword |
+| `memex_read` | Read a card's full content |
+| `memex_write` | Write or update a card |
+| `memex_links` | Show link graph stats |
+| `memex_archive` | Archive a card |
+| `memex_init` | Add memex workflow to AGENTS.md |
+
+## Graph View
+
+Explore your knowledge network with an interactive force-directed graph:
+
+![Graph View](https://raw.githubusercontent.com/iamtouchskyer/memex/main/docs/images/graph-view.png)
 
 ## Requirements
 
 - Node.js 18+
 - VS Code 1.100+
-- A MCP-compatible AI client (GitHub Copilot, Cursor, etc.)
 
 ## Quick Start
 
-1. Install this extension
+1. Install this extension from the VS Code Marketplace
 2. The MCP server starts automatically
 3. Ask your AI agent to "remember" something — it will use memex tools
+4. Run `memex init` in your project to add workflow instructions to AGENTS.md
 
-## Sync
-
-Sync your cards across devices with `memex sync`:
+## Sync Across Devices
 
 ```bash
 npx @touchskyer/memex sync --init
 ```
 
+Cards are stored in `~/.memex/cards/`. Sync them via git to access from any device or editor.
+
+## Browse Your Memory
+
+```bash
+npx @touchskyer/memex serve
+```
+
+Opens a visual timeline + graph view at `localhost:3939`.
+
+## Cross-Platform
+
+All editors share the same `~/.memex/cards/` directory. A card written in VS Code Copilot is instantly available in Cursor, Claude Code, Codex, or any other MCP client.
+
+| Platform | Integration |
+|----------|------------|
+| **VS Code / Copilot** | This extension |
+| **Claude Code** | Plugin (best experience) |
+| **Cursor** | MCP Server |
+| **Codex** | MCP Server |
+| **Windsurf** | MCP Server |
+
 ## Links
 
 - [GitHub](https://github.com/iamtouchskyer/memex)
 - [npm](https://www.npmjs.com/package/@touchskyer/memex)
+- [Memra Web](https://memra.vercel.app) — browse your cards online

@@ -2,7 +2,7 @@
   "name": "memex-mcp",
   "displayName": "Memex - Agent Memory",
   "description": "Persistent Zettelkasten memory for AI coding agents. Works with GitHub Copilot, Cursor, and any MCP-compatible client.",
-  "version": "0.1.8",
+  "version": "0.1.10",
   "publisher": "touchskyer",
   "repository": {
     "type": "git",
@@ -12,9 +12,20 @@
   "engines": {
     "vscode": "^1.100.0"
   },
-  "categories": ["AI", "Other"],
-  "keywords": ["mcp", "memory", "zettelkasten", "copilot", "agent"],
-  "activationEvents": ["onStartupFinished"],
+  "categories": [
+    "AI",
+    "Other"
+  ],
+  "keywords": [
+    "mcp",
+    "memory",
+    "zettelkasten",
+    "copilot",
+    "agent"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
   "main": "./dist/extension.js",
   "contributes": {
     "mcpServerDefinitionProviders": [
@@ -31,7 +42,10 @@
   },
   "devDependencies": {
     "@types/vscode": "^1.100.0",
-    "typescript": "^5.9.3",
-    "@vscode/vsce": "^3.0.0"
+    "@vscode/vsce": "^3.0.0",
+    "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "@touchskyer/memex": "^0.1.8"
   }
 }
