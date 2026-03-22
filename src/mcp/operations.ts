@@ -19,7 +19,7 @@ export function registerOperations(
 ): void {
   // ---- recall ----
   server.registerTool("memex_recall", {
-    description: "Recall relevant memory before starting a task. Returns the keyword index (if exists) or card list. Optionally search by query. Always call this at the start of a task.",
+    description: "IMPORTANT: You MUST call this at the START of every new task or conversation, BEFORE doing any work. This retrieves your persistent memory — knowledge cards from previous sessions with [[bidirectional links]]. Returns the keyword index (if exists) or card list. Optionally search by query. Without calling this first, you will miss context from prior sessions and repeat past mistakes.",
     inputSchema: z.object({
       query: z.string().optional().describe("Optional search query to find specific cards"),
     }),
@@ -43,7 +43,7 @@ export function registerOperations(
 
   // ---- retro ----
   server.registerTool("memex_retro", {
-    description: "Save an insight after completing a task. Handles frontmatter, source injection, and sync automatically. Call this at the end of a task when you learned something worth remembering.",
+    description: "IMPORTANT: Call this at the END of every task to save what you learned. Write one atomic insight per card with [[wikilinks]] to related cards. Only save non-obvious learnings — things that would be useful in future sessions (architecture decisions, gotchas, patterns discovered, bug root causes). Handles frontmatter, source tagging, and cross-device sync automatically.",
     inputSchema: z.object({
       slug: z.string().describe("Card slug in kebab-case"),
       title: z.string().describe("Card title (keep short, ≤60 chars, noun phrase not full sentence)"),
@@ -80,7 +80,7 @@ export function registerOperations(
 
   // ---- organize ----
   server.registerTool("memex_organize", {
-    description: "Analyze the card network for maintenance. Returns link stats, orphans, and hubs. Call periodically to keep the knowledge graph healthy.",
+    description: "Analyze the card network for maintenance. Returns link stats, orphans (unlinked cards), and hubs (heavily linked cards). Call this periodically (e.g. every few sessions) to identify cards that need linking or cleanup.",
     inputSchema: z.object({}),
   }, async () => {
     await hooks.run("pre", "organize");
