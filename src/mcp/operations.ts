@@ -68,10 +68,10 @@ export function registerOperations(
 
     await hooks.run("post", "retro");
 
-    // Upsell init if sync not configured
+    // Upsell sync if not configured
     const config = await readSyncConfig(home);
     const tip = !config.remote
-      ? "\n\nTip: Run `memex init` to enable cross-device sync."
+      ? "\n\nTip: To sync cards across devices, tell the user to run in terminal: memex sync --init && memex sync on"
       : "";
 
     return { content: [{ type: "text" as const, text: `Card '${slug}' saved.${tip}` }] };
