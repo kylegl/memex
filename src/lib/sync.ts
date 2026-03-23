@@ -82,6 +82,26 @@ async function ghAvailable(): Promise<boolean> {
 
 // ---- GitAdapter ----
 
+/** Detect the remote default branch after fetch. Falls back to main, then master. */
+async function detectRemoteBranch(home: string): Promise<string> {
+  // Try origin/HEAD (set by clone or `git remote set-head origin --auto`)
+  try {
+    const { stdout } = await execFile("git", [
+      "-C", home, "rev-parse", "--abbrev-ref", "origin/HEAD",
+    ]);
+    const branch = stdout.trim();
+    if (branch && branch !== "origin/HEAD") return branch;
+  } catch { /* not set */ }
+  // Probe common defaults
+  for (const candidate of ["origin/main", "origin/master"]) {
+    try {
+      await execFile("git", ["-C", home, "rev-parse", "--verify", candidate]);
+      return candidate;
+    } catch { /* not found */ }
+  }
+  return "origin/main"; // last resort
+}
+
 export class GitAdapter implements SyncAdapter {
   constructor(private home: string) {}
 
@@ -181,10 +201,10 @@ export class GitAdapter implements SyncAdapter {
       await execFile("git", ["-C", this.home, "fetch", "origin"]);
       // Check if remote has any commits
       try {
-        await execFile("git", ["-C", this.home, "rev-parse", "origin/main"]);
+        const remoteBranch = await detectRemoteBranch(this.home);
         // Remote has commits — merge with allow-unrelated-histories
         await execFile("git", [
-          "-C", this.home, "merge", "origin/main",
+          "-C", this.home, "merge", remoteBranch,
           "--allow-unrelated-histories", "--no-edit",
         ]);
       } catch {
@@ -214,10 +234,14 @@ export class GitAdapter implements SyncAdapter {
       return { success: true, message: "Offline, using local data." };
     }
     try {
-      await execFile("git", ["-C", this.home, "merge", "origin/main", "--no-edit"]);
+      const remoteBranch = await detectRemoteBranch(this.home);
+      await execFile("git", ["-C", this.home, "merge", remoteBranch, "--no-edit"]);
     } catch {
       try { await execFile("git", ["-C", this.home, "merge", "--abort"]); } catch { /* ignore */ }
-      return { success: false, message: "Merge conflict. Resolve manually in " + this.home };
+      return {
+        success: false,
+        message: "Merge conflict. Run `cd " + this.home + " && git status` to see conflicting files, resolve them, then `git add . && git commit`.",
+      };
     }
     return { success: true, message: "Pulled latest." };
   }
