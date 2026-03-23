@@ -58,7 +58,7 @@ export function activate(context: vscode.ExtensionContext) {
           nodeBin,
           [cliPath, "mcp"],
           {},
-          "0.1.10"
+          "0.1.21"
         ),
       ],
       resolveMcpServerDefinition: async (server) => server,

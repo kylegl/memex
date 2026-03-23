@@ -46,6 +46,6 @@
     "typescript": "^5.9.3"
   },
   "dependencies": {
-    "@touchskyer/memex": "^0.1.8"
+    "@touchskyer/memex": "^0.1.21"
   }
 }
