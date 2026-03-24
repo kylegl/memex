@@ -176,6 +176,15 @@ function buildSkeleton(t) {
   `;
 }
 
+function escapeHtml(str) {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 export function createShareCard(container, options = {}) {
   const {
     data = {},
@@ -211,7 +220,7 @@ export function createShareCard(container, options = {}) {
     const dateStr = currentData.created ? currentData.created.slice(0, 10).replace(/-/g, '/') : '';
     const src = (currentData.source || 'note').toUpperCase();
     const links = (currentData.links || [])
-      .map(l => `<span class="memex-sc-chip" style="background:${t.chipBg};color:${t.chipText}">[[${l}]]</span>`)
+      .map(l => `<span class="memex-sc-chip" style="background:${t.chipBg};color:${t.chipText}">[[${escapeHtml(l)}]]</span>`)
       .join('');
     const stats = currentData.stats
       ? `${currentData.stats.totalCards || 0} CARDS \u00b7 ${currentData.stats.totalDays || 0} DAYS`
@@ -221,10 +230,10 @@ export function createShareCard(container, options = {}) {
       <div class="memex-sc-card" style="background:${t.background}">
         <div class="memex-sc-card-inner">
           <div class="memex-sc-header">
-            <span class="memex-sc-source" style="background:${t.chipBg};color:${t.chipText}">${src}</span>
+            <span class="memex-sc-source" style="background:${t.chipBg};color:${t.chipText}">${escapeHtml(src)}</span>
             <span class="memex-sc-date" style="color:${t.secondary}">${dateStr}</span>
           </div>
-          <div class="memex-sc-title" style="color:${t.text}">${currentData.title || currentData.slug || ''}</div>
+          <div class="memex-sc-title" style="color:${t.text}">${escapeHtml(currentData.title || currentData.slug || '')}</div>
           <div class="memex-sc-body" style="color:${t.secondary};background:${t.contentBg};
             --sc-code-bg:${t.codeBg};--sc-table-border:${t.border};--sc-th-bg:${t.thBg};--sc-accent:${t.accent}">
             ${bodyHtml}

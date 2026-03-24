@@ -21,4 +21,8 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
+      - name: Configure git for tests
+        run: |
+          git config --global user.name "CI"
+          git config --global user.email "ci@test.local"
       - run: npm test

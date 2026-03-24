@@ -9,6 +9,15 @@ import { CardStore } from "../lib/store.js";
 import { parseFrontmatter, extractLinks } from "../lib/parser.js";
 import { readSyncConfig } from "../lib/sync.js";
 
+function toDateString(val: unknown): string {
+  if (!val) return "";
+  if (val instanceof Date) return val.toISOString().slice(0, 10);
+  const s = String(val);
+  // If gray-matter already stringified a Date, extract YYYY-MM-DD
+  const m = s.match(/^\d{4}-\d{2}-\d{2}/);
+  return m ? m[0] : s;
+}
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
@@ -80,8 +89,8 @@ export async function serveCommand(port: number): Promise<Server | null> {
             return {
               slug: c.slug,
               title: String(data.title || c.slug),
-              created: String(data.created || ""),
-              modified: String(data.modified || ""),
+              created: toDateString(data.created),
+              modified: toDateString(data.modified),
               source: String(data.source || ""),
               category: String(data.category || ""),
               firstLine,
@@ -155,8 +164,8 @@ export async function serveCommand(port: number): Promise<Server | null> {
             results.push({
               slug: c.slug,
               title,
-              created: String(data.created || ""),
-              modified: String(data.modified || ""),
+              created: toDateString(data.created),
+              modified: toDateString(data.modified),
               source: String(data.source || ""),
               firstLine,
               links,

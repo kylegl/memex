@@ -132,8 +132,7 @@ describe("serve API", () => {
     const testCard = cards.find((c: any) => c.slug === "test-card");
     expect(testCard).toBeDefined();
     expect(testCard.title).toBe("Test Card");
-    // gray-matter parses dates, String() produces long form — just check it contains the date
-    expect(testCard.created).toContain("2025");
+    expect(testCard.created).toBe("2025-01-15");
     expect(testCard.source).toBe("retro");
     expect(testCard.links).toEqual(["linked-card"]);
     expect(testCard.firstLine).toBeTruthy();
