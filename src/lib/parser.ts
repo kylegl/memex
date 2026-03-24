@@ -20,7 +20,7 @@ export function stringifyFrontmatter(
   for (const [key, value] of Object.entries(data)) {
     if (value === undefined || value === null) continue;
     const str = String(value).replace(/\n/g, " ").trim();
-    if (str === "" || /[:#{}[\],&*?|>!%@`]/.test(str)) {
+    if (str === "" || /[:#{}[\],&*?|>!%@`']/.test(str)) {
       yamlLines.push(`${key}: '${str.replace(/'/g, "''")}'`);
     } else {
       yamlLines.push(`${key}: ${str}`);

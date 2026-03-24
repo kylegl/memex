@@ -36,6 +36,11 @@ describe("serve API", () => {
       "---\ntitle: Linked Card\ncreated: 2025-01-14\nsource: manual\n---\nThis card is linked from test-card."
     );
 
+    await writeFile(
+      join(cardsDir, "index.md"),
+      "---\ntitle: Index\ncreated: 2020-01-01\n---\nIndex card"
+    );
+
     process.env.MEMEX_HOME = tmpDir;
     process.env.MEMEX_NO_OPEN = "1";
 
@@ -64,9 +69,9 @@ describe("serve API", () => {
     const res = await get(`${baseUrl}/api/cards`);
     expect(res.status).toBe(200);
     const cards = JSON.parse(res.body);
-    expect(cards).toHaveLength(2);
+    expect(cards).toHaveLength(3);
     const slugs = cards.map((c: any) => c.slug).sort();
-    expect(slugs).toEqual(["linked-card", "test-card"]);
+    expect(slugs).toEqual(["index", "linked-card", "test-card"]);
   });
 
   it("GET /api/cards/:slug returns card content", async () => {
@@ -87,7 +92,7 @@ describe("serve API", () => {
     const res = await get(`${baseUrl}/api/links`);
     expect(res.status).toBe(200);
     const stats = JSON.parse(res.body);
-    expect(stats).toHaveLength(2);
+    expect(stats).toHaveLength(3);
     const testCard = stats.find((s: any) => s.slug === "test-card");
     expect(testCard.outbound).toBe(1);
   });
@@ -103,5 +108,68 @@ describe("serve API", () => {
   it("GET /unknown returns 404", async () => {
     const res = await get(`${baseUrl}/unknown`);
     expect(res.status).toBe(404);
+  });
+
+  it("GET /api/cards sorts index card first", async () => {
+    const res = await get(`${baseUrl}/api/cards`);
+    const cards = JSON.parse(res.body);
+    expect(cards[0].slug).toBe("index");
+  });
+
+  it("GET /api/cards sorts remaining cards by created desc", async () => {
+    const res = await get(`${baseUrl}/api/cards`);
+    const cards = JSON.parse(res.body);
+    // Skip index card (first), rest should be sorted by created descending
+    const nonIndex = cards.filter((c: any) => c.slug !== "index");
+    for (let i = 1; i < nonIndex.length; i++) {
+      expect(nonIndex[i - 1].created >= nonIndex[i].created).toBe(true);
+    }
+  });
+
+  it("GET /api/cards returns correct fields", async () => {
+    const res = await get(`${baseUrl}/api/cards`);
+    const cards = JSON.parse(res.body);
+    const testCard = cards.find((c: any) => c.slug === "test-card");
+    expect(testCard).toBeDefined();
+    expect(testCard.title).toBe("Test Card");
+    // gray-matter parses dates, String() produces long form — just check it contains the date
+    expect(testCard.created).toContain("2025");
+    expect(testCard.source).toBe("retro");
+    expect(testCard.links).toEqual(["linked-card"]);
+    expect(testCard.firstLine).toBeTruthy();
+  });
+
+  it("GET / includes sync banner when not synced", async () => {
+    const res = await get(`${baseUrl}/`);
+    expect(res.body).toContain("sync-banner");
+    expect(res.body).toContain("memex sync --init");
+  });
+
+  it("GET /api/search with empty query returns results", async () => {
+    const res = await get(`${baseUrl}/api/search?q=`);
+    expect(res.status).toBe(200);
+    const results = JSON.parse(res.body);
+    expect(results.length).toBeGreaterThan(0);
+  });
+
+  it("GET /api/search with no match returns empty array", async () => {
+    const res = await get(`${baseUrl}/api/search?q=zzzznonexistent99999`);
+    expect(res.status).toBe(200);
+    const results = JSON.parse(res.body);
+    expect(results).toEqual([]);
+  });
+
+  it("GET /api/links returns correct inbound count", async () => {
+    const res = await get(`${baseUrl}/api/links`);
+    const stats = JSON.parse(res.body);
+    const linked = stats.find((s: any) => s.slug === "linked-card");
+    expect(linked).toBeDefined();
+    expect(linked.inbound).toBe(1); // referenced by test-card
+  });
+
+  it("GET /api/cards/:slug with encoded slug works", async () => {
+    const res = await get(`${baseUrl}/api/cards/${encodeURIComponent("test-card")}`);
+    expect(res.status).toBe(200);
+    expect(res.body).toContain("Test Card");
   });
 });

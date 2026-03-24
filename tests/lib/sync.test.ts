@@ -134,4 +134,116 @@ describe("GitAdapter", () => {
     const status = await adapter.status();
     expect(status.configured).toBe(false);
   });
+
+  it("status self-heals by reading git remote when sync.json has no remote", async () => {
+    const bare = await createBareRemote();
+    const adapter = new GitAdapter(home);
+    await adapter.init(bare);
+
+    // Remove remote from sync config but keep git remote
+    await writeSyncConfig(home, { adapter: "git", auto: false });
+
+    const status = await adapter.status();
+    expect(status.configured).toBe(true);
+    expect(status.remote).toBe(bare);
+
+    // Verify it persisted the fix
+    const config = await readSyncConfig(home);
+    expect(config.remote).toBe(bare);
+
+    await rm(bare, { recursive: true });
+  });
+
+  it("pull returns offline message when fetch fails", async () => {
+    const bare = await createBareRemote();
+    const adapter = new GitAdapter(home);
+    await adapter.init(bare);
+
+    // Delete bare remote to simulate network failure
+    await rm(bare, { recursive: true });
+
+    const result = await adapter.pull();
+    expect(result.success).toBe(true);
+    expect(result.message).toContain("Offline");
+  });
+
+  it("pull detects merge conflict and aborts cleanly", async () => {
+    const bare = await createBareRemote();
+    const adapter = new GitAdapter(home);
+    await adapter.init(bare);
+
+    // Create a second clone and push a conflicting change
+    const clone2 = await mkdtemp(join(tmpdir(), "memex-clone2-"));
+    await execFile("git", ["clone", bare, clone2]);
+    await writeFile(
+      join(clone2, "cards", "test.md"),
+      "---\ntitle: Test\ncreated: 2026-03-20\nsource: retro\n---\nConflicting content from clone2",
+      "utf-8"
+    );
+    await execFile("git", ["-C", clone2, "add", "-A"]);
+    await execFile("git", ["-C", clone2, "commit", "-m", "conflict from clone2"]);
+    await execFile("git", ["-C", clone2, "push", "origin", "HEAD"]);
+
+    // Now modify the same file locally
+    await writeFile(
+      join(home, "cards", "test.md"),
+      "---\ntitle: Test\ncreated: 2026-03-20\nsource: retro\n---\nConflicting content from local",
+      "utf-8"
+    );
+    await execFile("git", ["-C", home, "add", "-A"]);
+    await execFile("git", ["-C", home, "commit", "-m", "local conflicting change"]);
+
+    const result = await adapter.pull();
+    expect(result.success).toBe(false);
+    expect(result.message).toContain("Merge conflict");
+
+    await rm(bare, { recursive: true });
+    await rm(clone2, { recursive: true });
+  }, 20000);
+
+  it("push fails gracefully when remote is gone", async () => {
+    const bare = await createBareRemote();
+    const adapter = new GitAdapter(home);
+    await adapter.init(bare);
+
+    // Delete bare remote
+    await rm(bare, { recursive: true });
+
+    // Add a new card and try to push
+    await writeFile(
+      join(home, "cards", "orphan.md"),
+      "---\ntitle: Orphan\ncreated: 2026-03-20\n---\nNo remote",
+      "utf-8"
+    );
+    const result = await adapter.push();
+    expect(result.success).toBe(false);
+    expect(result.message).toContain("Push failed");
+  });
+
+  it("init throws when git is not available", async () => {
+    // Save original PATH and set to empty to simulate no git
+    const origPath = process.env.PATH;
+    process.env.PATH = "";
+    try {
+      const adapter = new GitAdapter(home);
+      await expect(adapter.init("https://example.com/repo.git")).rejects.toThrow(
+        "git is required"
+      );
+    } finally {
+      process.env.PATH = origPath;
+    }
+  });
+
+  it("re-init with same remote succeeds (remote set-url)", async () => {
+    const bare = await createBareRemote();
+    const adapter = new GitAdapter(home);
+    await adapter.init(bare);
+
+    // Re-init with same remote should not throw
+    await adapter.init(bare);
+    const config = await readSyncConfig(home);
+    expect(config.remote).toBe(bare);
+
+    await rm(bare, { recursive: true });
+  });
 });

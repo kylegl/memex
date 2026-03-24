@@ -23,3 +23,11 @@ describe("autoFetch", () => {
     await autoFetch("/tmp/nonexistent-memex-test-" + Date.now());
   });
 });
+
+describe("autoSync", () => {
+  it("is a no-op when auto is false", async () => {
+    const { autoSync } = await import("../../src/lib/sync.js");
+    // Should not throw even on nonexistent dir (auto defaults to false)
+    await autoSync("/tmp/nonexistent-memex-test-" + Date.now());
+  });
+});
