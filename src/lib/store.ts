@@ -58,7 +58,8 @@ export class CardStore {
 
   constructor(
     public readonly cardsDir: string,
-    private archiveDir: string
+    private archiveDir: string,
+    private nestedSlugs: boolean = false
   ) {}
 
   /** Invalidate scan cache after writes/deletes */
@@ -86,8 +87,15 @@ export class CardStore {
       if (entry.isDirectory()) {
         await this.walkDir(fullPath, results);
       } else if (entry.name.endsWith(".md")) {
+        const slug = this.nestedSlugs
+          ? join(dir, entry.name)
+              .replace(this.cardsDir + sep, "")
+              .replace(/\.md$/, "")
+              .replace(/\\/g, "/")
+          : basename(entry.name, ".md");
+
         results.push({
-          slug: basename(entry.name, ".md"),
+          slug,
           path: fullPath,
         });
       }
@@ -96,7 +104,8 @@ export class CardStore {
 
   async resolve(slug: string): Promise<string | null> {
     const cards = await this.scanAll();
-    const found = cards.find((c) => c.slug === slug);
+    const normalised = slug.replace(/\\/g, "/");
+    const found = cards.find((c) => c.slug === normalised);
     return found?.path ?? null;
   }
 
@@ -135,8 +144,8 @@ export class CardStore {
         throw new Error(`Card not found: ${slug}`);
       }
     }
-    await mkdir(this.archiveDir, { recursive: true });
     const dest = join(this.archiveDir, `${slug}.md`);
+    await mkdir(dirname(dest), { recursive: true });
     await rename(path, dest);
     this.invalidateCache();
   }
