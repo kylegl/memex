@@ -46,11 +46,16 @@ digraph organize {
 3. **Hub detection**: For cards with >= 10 inbound links:
    - `memex read` the hub and its linkers
    - Decide: is this card too broad? Should it be split into smaller atomic concepts?
-4. **Contradiction/staleness detection**: For recently modified cards:
-   - `memex read` the card and its neighbors (linked cards)
-   - Check for contradictions or outdated information
-   - Decide: merge, archive, or leave alone
-5. **Rebuild keyword index** (always, as last step)
+4. **Contradiction/staleness detection**: The organize report includes recently modified cards paired with their neighbors. For each pair:
+   - Read both cards' content (excerpts are in the report, `memex read` for full content if needed)
+   - Determine: do these cards **genuinely contradict** each other, or is one simply an **evolution** of the other?
+   - **If evolution** (new info supersedes old): merge the cards — append the old card's unique content to the new one, then `memex archive` the old card
+   - **If genuine contradiction** (two conflicting beliefs, unclear which is correct): mark the newer card with `status: conflict` in frontmatter and add a note explaining the contradiction. Do NOT auto-resolve — the human decides which belief wins
+   - **If no conflict**: leave both cards alone
+5. **Resolve existing conflicts**: Check the "Unresolved Conflicts" section. For each card with `status: conflict`:
+   - Surface it to the user: "Card X conflicts with card Y — which perspective should we keep?"
+   - If the user resolves it, remove `status: conflict` from frontmatter and merge/archive as directed
+6. **Rebuild keyword index** (always, as last step)
 
 ## Keyword Index Maintenance
 
