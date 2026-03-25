@@ -26,14 +26,19 @@ The rest of this skill uses CLI syntax for brevity. Substitute MCP tool calls if
 
 ```dot
 digraph organize {
-    "memex links (global graph stats)" -> "Detect orphans (in=0)";
+    "Organize report" -> "Detect orphans (in=0)";
     "Detect orphans (in=0)" -> "For each orphan: memex read + search related";
     "For each orphan: memex read + search related" -> "LLM decides: append links / mark stale / leave alone";
-    "memex links (global graph stats)" -> "Detect hubs (in >= 10)";
+    "Organize report" -> "Detect hubs (in >= 10)";
     "Detect hubs (in >= 10)" -> "LLM decides: split into smaller cards or leave alone";
-    "memex links (global graph stats)" -> "Filter by modified since last run";
-    "Filter by modified since last run" -> "memex read changed cards + neighbors";
-    "memex read changed cards + neighbors" -> "LLM decides: merge / archive old card";
+    "Organize report" -> "Recently modified pairs";
+    "Recently modified pairs" -> "Genuinely contradicts?" [shape=diamond];
+    "Genuinely contradicts?" -> "Mark status: conflict, surface to human" [label="yes"];
+    "Genuinely contradicts?" -> "Evolution?" [label="no"];
+    "Evolution?" -> "Merge + archive old card" [label="yes"];
+    "Evolution?" -> "Leave alone" [label="no"];
+    "Organize report" -> "Resolve existing conflicts";
+    "Resolve existing conflicts" -> "Ask user which belief wins";
     "All checks done" -> "Rebuild keyword index";
 }
 ```

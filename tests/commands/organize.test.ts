@@ -60,6 +60,38 @@ describe("organize command", () => {
     expect(result.output).toContain("card-a ↔ card-b");
   });
 
+  it("includes cards with no modified date when since is provided", async () => {
+    await writeFile(
+      join(tmpDir, "cards", "no-date.md"),
+      "---\ntitle: No Date\ncreated: 2026-01-01\nsource: test\n---\nNo modified field. See [[other]].",
+    );
+    await writeFile(
+      join(tmpDir, "cards", "other.md"),
+      "---\ntitle: Other\ncreated: 2026-03-25\nmodified: 2026-03-25\nsource: test\n---\nSome info.",
+    );
+    const result = await organizeCommand(store, "2026-03-24");
+    // Cards with no modified date should be included conservatively
+    expect(result.output).toContain("no-date ↔ other");
+  });
+
+  it("detects hubs with >= 10 inbound links", async () => {
+    // Create a hub card
+    await writeFile(
+      join(tmpDir, "cards", "hub.md"),
+      "---\ntitle: Hub Card\ncreated: 2026-03-25\nmodified: 2026-03-25\nsource: test\n---\nCentral concept.",
+    );
+    // Create 10 cards linking to the hub
+    for (let i = 0; i < 10; i++) {
+      await writeFile(
+        join(tmpDir, "cards", `linker-${i}.md`),
+        `---\ntitle: Linker ${i}\ncreated: 2026-03-25\nmodified: 2026-03-25\nsource: test\n---\nSee [[hub]] for details.`,
+      );
+    }
+    const result = await organizeCommand(store, null);
+    expect(result.output).toContain("Hubs");
+    expect(result.output).toContain("hub (10 inbound)");
+  });
+
   it("skips old cards when since is provided", async () => {
     await writeFile(
       join(tmpDir, "cards", "old.md"),

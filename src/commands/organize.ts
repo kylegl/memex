@@ -22,7 +22,7 @@ export async function organizeCommand(
   // Build link graph
   const outboundMap = new Map<string, string[]>();
   const inboundMap = new Map<string, string[]>();
-  const cardData = new Map<string, { title: string; modified: string; content: string }>();
+  const cardData = new Map<string, { title: string; modified: string; status: string; content: string }>();
 
   for (const card of cards) {
     inboundMap.set(card.slug, []);
@@ -35,7 +35,8 @@ export async function organizeCommand(
     outboundMap.set(card.slug, links);
     cardData.set(card.slug, {
       title: String(data.title || card.slug),
-      modified: toDateString(data.modified || data.created || ""),
+      modified: toDateString(data.modified || ""),
+      status: String(data.status || ""),
       content: content.trim(),
     });
 
@@ -75,12 +76,10 @@ export async function organizeCommand(
     );
   }
 
-  // Conflict cards
+  // Conflict cards (collected from first pass, no extra reads)
   const conflicts: string[] = [];
   for (const card of cards) {
-    const raw = await store.readCard(card.slug);
-    const { data } = parseFrontmatter(raw);
-    if (data.status === "conflict") {
+    if (cardData.get(card.slug)?.status === "conflict") {
       conflicts.push(card.slug);
     }
   }
@@ -96,7 +95,8 @@ export async function organizeCommand(
   if (lastOrganize) {
     for (const card of cards) {
       const info = cardData.get(card.slug);
-      if (info && info.modified >= lastOrganize) {
+      // Include cards with no date (conservative: better to over-check than miss)
+      if (info && (!info.modified || info.modified >= lastOrganize)) {
         recentCards.push(card.slug);
       }
     }
@@ -143,7 +143,9 @@ export async function organizeCommand(
       sections.push(
         "## Recently Modified Cards + Neighbors (check for contradictions)\n" +
         capped.join("\n\n") +
-        (pairSections.length > 20 ? `\n\n... and ${pairSections.length - 20} more pairs` : ""),
+        (pairSections.length > 20
+          ? `\n\n... and ${pairSections.length - 20} more pairs not shown. Run with a recent \`since\` date for targeted checks.`
+          : ""),
       );
     }
   }
