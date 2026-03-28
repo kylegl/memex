@@ -217,7 +217,7 @@ export async function serveCommand(port: number): Promise<Server | null> {
         }
       });
 
-      server.listen(currentPort, () => {
+      server.listen(currentPort, '127.0.0.1', () => {
         const url = `http://localhost:${currentPort}`;
         console.log(`memex is running at ${url}`);
         console.log("💡 Tip: Run 'memex sync --init' to sync and access your cards online");

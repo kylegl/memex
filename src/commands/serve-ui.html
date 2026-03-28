@@ -1290,8 +1290,23 @@ body::-webkit-scrollbar { display: none; }
   function renderMarkdown(text) {
     const preserved = text.replace(/\[\[([^\]]+)\]\]/g, '%%MEMEXLINK:$1%%');
     let html = marked.parse(preserved, { breaks: true });
-    html = html.replace(/%%MEMEXLINK:(.+?)%%/g,
-      '<span class="chip" data-link="$1">[[$1]]</span>');
+    // Sanitize: strip all HTML tags except safe ones to prevent stored XSS
+    const tmp = document.createElement('div');
+    tmp.innerHTML = html;
+    tmp.querySelectorAll('script,iframe,object,embed,form,input,textarea,select,button').forEach(el => el.remove());
+    tmp.querySelectorAll('*').forEach(el => {
+      for (const attr of [...el.attributes]) {
+        if (attr.name.startsWith('on') || attr.name === 'srcdoc' || (attr.name === 'src' && !el.matches('img'))) {
+          el.removeAttribute(attr.name);
+        }
+      }
+      if (el.matches('img') && el.getAttribute('src')?.startsWith('javascript:')) {
+        el.removeAttribute('src');
+      }
+    });
+    html = tmp.innerHTML;
+    html = html.replace(/%%MEMEXLINK:(.+?)%%/g, (_, link) =>
+      '<span class="chip" data-link="' + esc(link) + '">[[' + esc(link) + ']]</span>');
     return html;
   }
 
