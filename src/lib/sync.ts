@@ -151,6 +151,9 @@ export class GitAdapter implements SyncAdapter {
       await execFile("git", ["init", this.home]);
     }
 
+    // Prevent CRLF issues on Windows
+    await execFile("git", ["-C", this.home, "config", "core.autocrlf", "false"]);
+
     // Ensure .gitignore exists with local-only files
     const gitignorePath = join(this.home, ".gitignore");
     const ignoreEntries = [".sync.json", ".last-organize"];
@@ -183,7 +186,9 @@ export class GitAdapter implements SyncAdapter {
     }
 
     // Commit local content first
-    await execFile("git", ["-C", this.home, "add", "-A"]);
+    // Scope add to cards/ and archive/ only (don't stage unrelated files in ~/.memex)
+    await execFile("git", ["-C", this.home, "add", "cards"]);
+    try { await execFile("git", ["-C", this.home, "add", "archive"]); } catch { /* archive dir may not exist */ }
     try {
       await execFile("git", [
         "-C",
@@ -251,7 +256,9 @@ export class GitAdapter implements SyncAdapter {
     if (!config.remote) {
       return { success: false, message: "Not configured." };
     }
-    await execFile("git", ["-C", this.home, "add", "-A"]);
+    // Scope add to cards/ and archive/ only (don't stage unrelated files in ~/.memex)
+    await execFile("git", ["-C", this.home, "add", "cards"]);
+    try { await execFile("git", ["-C", this.home, "add", "archive"]); } catch { /* archive dir may not exist */ }
     try {
       const ts = new Date().toISOString();
       await execFile("git", ["-C", this.home, "commit", "-m", `memex sync ${ts}`]);

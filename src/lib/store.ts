@@ -21,7 +21,7 @@ export function validateSlug(slug: string): void {
   }
 
   // Reject slugs that are only dots and/or slashes (e.g. "..", "./.", "///")
-  if (/^[./]+$/.test(trimmed)) {
+  if (/^[./\\]+$/.test(trimmed)) {
     throw new Error("Invalid slug: must not consist only of dots and slashes");
   }
 
@@ -30,12 +30,17 @@ export function validateSlug(slug: string): void {
   }
 
   // Reject leading/trailing slashes or consecutive slashes (empty path segments)
-  if (trimmed.startsWith("/") || trimmed.endsWith("/") || trimmed.includes("//")) {
+  // Check both Unix (/) and Windows (\) separators
+  if (
+    trimmed.startsWith("/") || trimmed.startsWith("\\") ||
+    trimmed.endsWith("/") || trimmed.endsWith("\\") ||
+    trimmed.includes("//") || trimmed.includes("\\\\")
+  ) {
     throw new Error("Invalid slug: must not contain empty path segments");
   }
 
   // Reject path segments that are just dots (e.g. "a/../b", "./foo")
-  const segments = trimmed.split("/");
+  const segments = trimmed.split(/[/\\]/);
   for (const seg of segments) {
     if (seg === "." || seg === "..") {
       throw new Error("Invalid slug: path segments must not be '.' or '..'");
@@ -53,7 +58,8 @@ export class CardStore {
 
   constructor(
     public readonly cardsDir: string,
-    private archiveDir: string
+    private archiveDir: string,
+    private nestedSlugs: boolean = false
   ) {}
 
   /** Invalidate scan cache after writes/deletes */
@@ -81,8 +87,16 @@ export class CardStore {
       if (entry.isDirectory()) {
         await this.walkDir(fullPath, results);
       } else if (entry.name.endsWith(".md")) {
+        // Use relative path for nested slugs to prevent collision
+        const slug = this.nestedSlugs
+          ? join(dir, entry.name)
+              .replace(this.cardsDir + sep, "")
+              .replace(/\.md$/, "")
+              .replace(/\\/g, "/")
+          : basename(entry.name, ".md");
+
         results.push({
-          slug: basename(entry.name, ".md"),
+          slug,
           path: fullPath,
         });
       }
@@ -91,7 +105,8 @@ export class CardStore {
 
   async resolve(slug: string): Promise<string | null> {
     const cards = await this.scanAll();
-    const found = cards.find((c) => c.slug === slug);
+    const normalised = slug.replace(/\\/g, "/");
+    const found = cards.find((c) => c.slug === normalised);
     return found?.path ?? null;
   }
 
@@ -115,11 +130,15 @@ export class CardStore {
     const targetPath = existing ?? join(this.cardsDir, `${slug}.md`);
     this.assertSafePath(targetPath);
     await mkdir(dirname(targetPath), { recursive: true });
-    await writeFile(targetPath, content, "utf-8");
+    // Atomic write: write to temp, then rename (prevents corruption on crash)
+    const tmpPath = targetPath + ".tmp";
+    await writeFile(tmpPath, content, "utf-8");
+    await rename(tmpPath, targetPath);
     this.invalidateCache();
   }
 
   async archiveCard(slug: string): Promise<void> {
+    validateSlug(slug);
     const path = await this.resolve(slug);
     if (!path) {
       try {
@@ -130,8 +149,14 @@ export class CardStore {
         throw new Error(`Card not found: ${slug}`);
       }
     }
-    await mkdir(this.archiveDir, { recursive: true });
     const dest = join(this.archiveDir, `${slug}.md`);
+    // Ensure archive subdirectory exists and path is safe
+    const resolvedDest = resolve(dest);
+    const resolvedArchive = resolve(this.archiveDir);
+    if (!resolvedDest.startsWith(resolvedArchive + sep) && resolvedDest !== resolvedArchive) {
+      throw new Error(`Invalid slug: path escapes archive directory`);
+    }
+    await mkdir(dirname(dest), { recursive: true });
     await rename(path, dest);
     this.invalidateCache();
   }

@@ -1,11 +1,16 @@
 import { CardStore } from "../lib/store.js";
 import { parseFrontmatter, extractLinks } from "../lib/parser.js";
 import { formatCardList, formatSearchResult } from "../lib/formatter.js";
+import { MemexConfig } from "../lib/config.js";
+import { join } from "node:path";
 
 const DEFAULT_LIMIT = 10;
 
 interface SearchOptions {
   limit?: number;
+  all?: boolean;
+  config?: MemexConfig;
+  memexHome?: string;
 }
 
 interface SearchResult {
@@ -14,16 +19,44 @@ interface SearchResult {
 }
 
 export async function searchCommand(store: CardStore, query: string | undefined, options: SearchOptions = {}): Promise<SearchResult> {
-  const cards = await store.scanAll();
-  if (cards.length === 0) return { output: "", exitCode: 0 };
+  // Gather all stores to search
+  const storesToSearch: Array<{ store: CardStore; dirPrefix: string }> = [
+    { store, dirPrefix: "cards" }
+  ];
+
+  // Add additional search directories if --all is set
+  if (options.all && options.config?.searchDirs && options.config.searchDirs.length > 0 && options.memexHome) {
+    const archiveDir = join(options.memexHome, "archive");
+    for (const searchDir of options.config.searchDirs) {
+      const fullPath = join(options.memexHome, searchDir);
+      const additionalStore = new CardStore(fullPath, archiveDir, store["nestedSlugs"]);
+      const dirName = searchDir.split("/").pop() || searchDir;
+      storesToSearch.push({ store: additionalStore, dirPrefix: dirName });
+    }
+  }
+
+  // Only prefix slugs if we're actually searching multiple directories
+  const shouldPrefix = storesToSearch.length > 1;
+
+  // Collect all cards from all stores
+  const allCards: Array<{ slug: string; store: CardStore; dirPrefix: string }> = [];
+  for (const { store: s, dirPrefix } of storesToSearch) {
+    const cards = await s.scanAll();
+    for (const card of cards) {
+      allCards.push({ slug: card.slug, store: s, dirPrefix });
+    }
+  }
+
+  if (allCards.length === 0) return { output: "", exitCode: 0 };
 
   // No query: list all cards
   if (!query) {
     const items = await Promise.all(
-      cards.map(async (c) => {
-        const raw = await store.readCard(c.slug);
+      allCards.map(async (c) => {
+        const raw = await c.store.readCard(c.slug);
         const { data } = parseFrontmatter(raw);
-        return { slug: c.slug, title: String(data.title || c.slug) };
+        const prefixedSlug = shouldPrefix ? `${c.dirPrefix}/${c.slug}` : c.slug;
+        return { slug: prefixedSlug, title: String(data.title || c.slug) };
       })
     );
     return { output: formatCardList(items), exitCode: 0 };
@@ -33,24 +66,34 @@ export async function searchCommand(store: CardStore, query: string | undefined,
   const rawLimit = options.limit ?? DEFAULT_LIMIT;
   // Clamp limit to a safe positive range; 0 returns no results (intentional)
   const limit = rawLimit < 0 ? DEFAULT_LIMIT : rawLimit;
-  const matchedCards: { slug: string; matchLine: string; matchCount: number }[] = [];
+  const matchedCards: { slug: string; matchLine: string; matchCount: number; store: CardStore; dirPrefix: string }[] = [];
 
-  for (const card of cards) {
-    const raw = await store.readCard(card.slug);
+  // Split query into tokens — ALL tokens must appear (AND logic)
+  const tokens = query.split(/\s+/).filter(Boolean);
+  const escapedTokens = tokens.map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+
+  for (const card of allCards) {
+    const raw = await card.store.readCard(card.slug);
     const { data, content } = parseFrontmatter(raw);
     const title = String(data.title || card.slug);
-    // Search title + body, case-insensitive
-    const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    const regex = new RegExp(escaped, "gi");
     const searchText = title + "\n" + content;
-    const matches = searchText.match(regex);
-    if (matches && matches.length > 0) {
-      // Find first matching line in body (use non-global regex to avoid lastIndex drift)
-      const lineRegex = new RegExp(escaped, "i");
-      const bodyLines = content.split("\n");
-      const matchLine = bodyLines.find((l) => lineRegex.test(l))?.trim() || "";
-      matchedCards.push({ slug: card.slug, matchLine, matchCount: matches.length });
+
+    // Every token must appear (case-insensitive)
+    const allMatch = escapedTokens.every((t) => new RegExp(t, "i").test(searchText));
+    if (!allMatch) continue;
+
+    // Count total token hits for ranking
+    let matchCount = 0;
+    for (const t of escapedTokens) {
+      const hits = searchText.match(new RegExp(t, "gi"));
+      if (hits) matchCount += hits.length;
     }
+
+    // Find first matching line (use first token for the preview line)
+    const lineRegex = new RegExp(escapedTokens[0], "i");
+    const bodyLines = content.split("\n");
+    const matchLine = bodyLines.find((l) => lineRegex.test(l))?.trim() || "";
+    matchedCards.push({ slug: card.slug, matchLine, matchCount, store: card.store, dirPrefix: card.dirPrefix });
   }
 
   if (matchedCards.length === 0) return { output: "", exitCode: 0 };
@@ -61,7 +104,7 @@ export async function searchCommand(store: CardStore, query: string | undefined,
 
   const results: string[] = [];
   for (const matched of topCards) {
-    const raw = await store.readCard(matched.slug);
+    const raw = await matched.store.readCard(matched.slug);
     const { data, content } = parseFrontmatter(raw);
     const links = extractLinks(content);
     const paragraphs = content.trim().split(/\n\n+/);
@@ -69,9 +112,11 @@ export async function searchCommand(store: CardStore, query: string | undefined,
 
     const showMatchLine = matched.matchLine && !firstParagraph.includes(matched.matchLine) ? matched.matchLine : null;
 
+    const prefixedSlug = shouldPrefix ? `${matched.dirPrefix}/${matched.slug}` : matched.slug;
+
     results.push(
       formatSearchResult({
-        slug: matched.slug,
+        slug: prefixedSlug,
         title: String(data.title || matched.slug),
         firstParagraph,
         matchLine: showMatchLine,
