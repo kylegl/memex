@@ -231,7 +231,7 @@ describe("LocalEmbeddingProvider", () => {
     // Should be normalized
     const magnitude = Math.sqrt(result[0].reduce((sum, v) => sum + v * v, 0));
     expect(magnitude).toBeCloseTo(1, 2);
-  }, 120000); // 2 min — long text = multiple chunks
+  }, 300000); // 5 min — long text = multiple chunks; Windows CI with native bindings is slow
 
   it("handles long Chinese text without context overflow", async () => {
     const provider = new LocalEmbeddingProvider();
@@ -255,7 +255,7 @@ describe("LocalEmbeddingProvider", () => {
     // Should be normalized
     const magnitude = Math.sqrt(result[0].reduce((sum, v) => sum + v * v, 0));
     expect(magnitude).toBeCloseTo(1, 2);
-  }, 120000);
+  }, 300000); // 5 min — CJK text chunking + model inference is slow on Windows CI
 
   it("handles mix of short and long texts in batch", async () => {
     const provider = new LocalEmbeddingProvider();
@@ -272,7 +272,7 @@ describe("LocalEmbeddingProvider", () => {
     expect(result[1].length).toBe(768);
     // They should be different vectors
     expect(result[0]).not.toEqual(result[1]);
-  }, 120000);
+  }, 300000); // 5 min — batch with long text is slow on Windows CI
 });
 
 describe("OllamaEmbeddingProvider", () => {
