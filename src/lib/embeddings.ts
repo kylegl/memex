@@ -108,14 +108,19 @@ export class OpenAIEmbeddingProvider implements EmbeddingProvider {
 const DEFAULT_LOCAL_MODEL =
   "hf:ggml-org/embeddinggemma-300m-qat-q8_0-GGUF/embeddinggemma-300m-qat-Q8_0.gguf";
 
+/** Handle returned by node-llama-cpp's model.createEmbeddingContext(). */
+interface LlamaEmbeddingContext {
+  getEmbeddingFor(text: string): Promise<{ vector: readonly number[] }>;
+}
+
 /**
  * Normalize a vector to unit length.
- * Handles NaN/Infinity values by replacing them with 0.
+ * Replaces NaN/Infinity with 0 and returns a zero vector when magnitude is negligible.
  */
 function normalizeVector(vec: number[]): number[] {
   const sanitized = vec.map((v) => (Number.isFinite(v) ? v : 0));
   const magnitude = Math.sqrt(sanitized.reduce((sum, v) => sum + v * v, 0));
-  if (magnitude < 1e-10) return sanitized;
+  if (magnitude < 1e-10) return new Array<number>(sanitized.length).fill(0);
   return sanitized.map((v) => v / magnitude);
 }
 
@@ -131,7 +136,6 @@ export async function isNodeLlamaCppAvailable(): Promise<boolean> {
   }
 }
 
-/**
 /**
  * Estimate the maximum safe character length for a given token context size.
  *
@@ -218,8 +222,8 @@ function averageVectors(vectors: number[][]): number[] {
 export class LocalEmbeddingProvider implements EmbeddingProvider {
   readonly model: string;
   private modelPath: string;
-  private context: unknown | null = null;
-  private initPromise: Promise<unknown> | null = null;
+  private context: LlamaEmbeddingContext | null = null;
+  private initPromise: Promise<LlamaEmbeddingContext> | null = null;
   /** Maximum safe character length for a single embedding call. */
   private _maxChars: number = estimateMaxChars(2048); // conservative default
 
@@ -236,19 +240,12 @@ export class LocalEmbeddingProvider implements EmbeddingProvider {
     return this._maxChars;
   }
 
-  private async ensureContext(): Promise<{
-    getEmbeddingFor: (text: string) => Promise<{ vector: Float32Array }>;
-  }> {
-    if (this.context) {
-      return this.context as Awaited<ReturnType<typeof this.ensureContext>>;
-    }
-    if (this.initPromise) {
-      return this.initPromise as Promise<Awaited<ReturnType<typeof this.ensureContext>>>;
-    }
+  private async ensureContext(): Promise<LlamaEmbeddingContext> {
+    if (this.context) return this.context;
+    if (this.initPromise) return this.initPromise;
 
     this.initPromise = (async () => {
       try {
-        // Dynamic import — fails gracefully if node-llama-cpp is not installed
         const { getLlama, resolveModelFile, LlamaLogLevel } = await import(
           "node-llama-cpp"
         );
@@ -264,13 +261,12 @@ export class LocalEmbeddingProvider implements EmbeddingProvider {
         }
 
         const ctx = await model.createEmbeddingContext();
-
-        this.context = ctx;
-        return ctx;
+        this.context = ctx as LlamaEmbeddingContext;
+        return this.context;
       } catch (err) {
+        // Allow retry on next call by clearing the promise
         this.initPromise = null;
-        const message =
-          err instanceof Error ? err.message : String(err);
+        const message = err instanceof Error ? err.message : String(err);
         if (message.includes("Cannot find package")) {
           throw new Error(
             "node-llama-cpp is not installed. Install it with: npm install node-llama-cpp"
@@ -280,7 +276,7 @@ export class LocalEmbeddingProvider implements EmbeddingProvider {
       }
     })();
 
-    return this.initPromise as Promise<Awaited<ReturnType<typeof this.ensureContext>>>;
+    return this.initPromise;
   }
 
   async embed(texts: string[]): Promise<number[][]> {

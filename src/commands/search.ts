@@ -3,7 +3,6 @@ import { parseFrontmatter, extractLinks } from "../lib/parser.js";
 import { formatCardList, formatSearchResult } from "../lib/formatter.js";
 import { MemexConfig } from "../lib/config.js";
 import {
-  OpenAIEmbeddingProvider,
   EmbeddingCache,
   embedCards,
   cosineSimilarity,
