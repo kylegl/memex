@@ -68,75 +68,73 @@ describe("readConfig", () => {
     expect(config).toEqual({ nestedSlugs: false });
   });
 
-  // --- embeddingModel ---
+  // --- embeddingProvider config ---
 
-  it("reads embeddingModel from config file", async () => {
-    await writeFile(join(tmpDir, ".memexrc"), JSON.stringify({ embeddingModel: "text-embedding-3-large" }));
+  it("reads embeddingProvider: local from config file", async () => {
+    await writeFile(join(tmpDir, ".memexrc"), JSON.stringify({ embeddingProvider: "local" }));
     const config = await readConfig(tmpDir);
-    expect(config.embeddingModel).toBe("text-embedding-3-large");
+    expect(config.embeddingProvider).toBe("local");
   });
 
-  it("treats non-string embeddingModel as undefined", async () => {
-    await writeFile(join(tmpDir, ".memexrc"), JSON.stringify({ embeddingModel: 42 }));
+  it("reads embeddingProvider: openai from config file", async () => {
+    await writeFile(join(tmpDir, ".memexrc"), JSON.stringify({ embeddingProvider: "openai" }));
     const config = await readConfig(tmpDir);
-    expect(config.embeddingModel).toBeUndefined();
+    expect(config.embeddingProvider).toBe("openai");
   });
 
-  // --- semanticWeight ---
-
-  it("reads semanticWeight from config file", async () => {
-    await writeFile(join(tmpDir, ".memexrc"), JSON.stringify({ semanticWeight: 0.5 }));
+  it("reads embeddingProvider: ollama from config file", async () => {
+    await writeFile(join(tmpDir, ".memexrc"), JSON.stringify({ embeddingProvider: "ollama" }));
     const config = await readConfig(tmpDir);
-    expect(config.semanticWeight).toBe(0.5);
+    expect(config.embeddingProvider).toBe("ollama");
   });
 
-  it("reads semanticWeight: 0 (full keyword)", async () => {
-    await writeFile(join(tmpDir, ".memexrc"), JSON.stringify({ semanticWeight: 0 }));
+  it("treats invalid embeddingProvider as undefined", async () => {
+    await writeFile(join(tmpDir, ".memexrc"), JSON.stringify({ embeddingProvider: "invalid" }));
     const config = await readConfig(tmpDir);
-    expect(config.semanticWeight).toBe(0);
+    expect(config.embeddingProvider).toBeUndefined();
   });
 
-  it("reads semanticWeight: 1 (full semantic)", async () => {
-    await writeFile(join(tmpDir, ".memexrc"), JSON.stringify({ semanticWeight: 1 }));
+  it("treats non-string embeddingProvider as undefined", async () => {
+    await writeFile(join(tmpDir, ".memexrc"), JSON.stringify({ embeddingProvider: 42 }));
     const config = await readConfig(tmpDir);
-    expect(config.semanticWeight).toBe(1);
+    expect(config.embeddingProvider).toBeUndefined();
   });
 
-  it("treats semanticWeight outside [0,1] as undefined", async () => {
-    await writeFile(join(tmpDir, ".memexrc"), JSON.stringify({ semanticWeight: 1.5 }));
+  it("reads ollamaModel from config file", async () => {
+    await writeFile(join(tmpDir, ".memexrc"), JSON.stringify({ ollamaModel: "all-minilm" }));
     const config = await readConfig(tmpDir);
-    expect(config.semanticWeight).toBeUndefined();
+    expect(config.ollamaModel).toBe("all-minilm");
   });
 
-  it("treats negative semanticWeight as undefined", async () => {
-    await writeFile(join(tmpDir, ".memexrc"), JSON.stringify({ semanticWeight: -0.1 }));
+  it("reads ollamaBaseUrl from config file", async () => {
+    await writeFile(join(tmpDir, ".memexrc"), JSON.stringify({ ollamaBaseUrl: "http://myhost:11434" }));
     const config = await readConfig(tmpDir);
-    expect(config.semanticWeight).toBeUndefined();
+    expect(config.ollamaBaseUrl).toBe("http://myhost:11434");
   });
 
-  it("treats non-number semanticWeight as undefined", async () => {
-    await writeFile(join(tmpDir, ".memexrc"), JSON.stringify({ semanticWeight: "high" }));
+  it("reads localModelPath from config file", async () => {
+    await writeFile(join(tmpDir, ".memexrc"), JSON.stringify({ localModelPath: "/path/to/model.gguf" }));
     const config = await readConfig(tmpDir);
-    expect(config.semanticWeight).toBeUndefined();
+    expect(config.localModelPath).toBe("/path/to/model.gguf");
   });
 
-  // --- full config round-trip ---
-
-  it("reads all config fields together", async () => {
-    await writeFile(join(tmpDir, ".memexrc"), JSON.stringify({
-      nestedSlugs: true,
-      searchDirs: ["archive"],
-      openaiApiKey: "sk-test",
-      embeddingModel: "text-embedding-3-large",
-      semanticWeight: 0.6,
-    }));
+  it("reads full embedding config together", async () => {
+    await writeFile(
+      join(tmpDir, ".memexrc"),
+      JSON.stringify({
+        nestedSlugs: false,
+        embeddingProvider: "ollama",
+        ollamaModel: "nomic-embed-text",
+        ollamaBaseUrl: "http://localhost:11434",
+        localModelPath: "hf:some/model",
+        openaiApiKey: "sk-test",
+      })
+    );
     const config = await readConfig(tmpDir);
-    expect(config).toEqual({
-      nestedSlugs: true,
-      searchDirs: ["archive"],
-      openaiApiKey: "sk-test",
-      embeddingModel: "text-embedding-3-large",
-      semanticWeight: 0.6,
-    });
+    expect(config.embeddingProvider).toBe("ollama");
+    expect(config.ollamaModel).toBe("nomic-embed-text");
+    expect(config.ollamaBaseUrl).toBe("http://localhost:11434");
+    expect(config.localModelPath).toBe("hf:some/model");
+    expect(config.openaiApiKey).toBe("sk-test");
   });
 });

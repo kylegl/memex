@@ -3,19 +3,15 @@ import { parseFrontmatter, extractLinks } from "../lib/parser.js";
 import { formatCardList, formatSearchResult } from "../lib/formatter.js";
 import { MemexConfig } from "../lib/config.js";
 import {
-  OpenAIEmbeddingProvider,
   EmbeddingCache,
   embedCards,
   cosineSimilarity,
-  DEFAULT_EMBEDDING_MODEL,
+  createEmbeddingProvider,
   type EmbeddingProvider,
 } from "../lib/embeddings.js";
 import { join } from "node:path";
 
 const DEFAULT_LIMIT = 10;
-
-/** Default weight for semantic score in hybrid ranking. */
-const DEFAULT_SEMANTIC_WEIGHT = 0.7;
 
 interface SearchOptions {
   limit?: number;
@@ -171,24 +167,23 @@ async function semanticSearch(
   if (limit === 0) return { output: "", exitCode: 0 };
 
   // Resolve embedding provider
-  const apiKey = options.config?.openaiApiKey ?? process.env.OPENAI_API_KEY;
-  const embeddingModel = options.config?.embeddingModel ?? DEFAULT_EMBEDDING_MODEL;
   let provider: EmbeddingProvider;
   if (options._embeddingProvider) {
     provider = options._embeddingProvider;
   } else {
-    if (!apiKey) {
-      return {
-        output: "Semantic search requires an OpenAI API key. Set openaiApiKey in .memexrc or OPENAI_API_KEY env var.",
-        exitCode: 1,
-      };
+    try {
+      provider = await createEmbeddingProvider({
+        type: options.config?.embeddingProvider,
+        openaiApiKey: options.config?.openaiApiKey,
+        localModelPath: options.config?.localModelPath,
+        ollamaModel: options.config?.ollamaModel,
+        ollamaBaseUrl: options.config?.ollamaBaseUrl,
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      return { output: message, exitCode: 1 };
     }
-    provider = new OpenAIEmbeddingProvider(apiKey, embeddingModel);
   }
-
-  // Resolve semantic weight from config (default 0.7)
-  const semanticWeight = options.config?.semanticWeight ?? DEFAULT_SEMANTIC_WEIGHT;
-  const keywordWeight = 1 - semanticWeight;
 
   // Build / refresh embedding cache
   const memexHome = options.memexHome ?? "";
@@ -220,9 +215,9 @@ async function semanticSearch(
     const kwRaw = keywordScores.get(card.slug) ?? 0;
     const kwNormalized = maxKw > 0 ? kwRaw / maxKw : 0;
 
-    // Hybrid scoring: semanticWeight * semantic + keywordWeight * keywordNormalized
+    // Hybrid scoring: 0.7 * semantic + 0.3 * keywordNormalized
     const finalScore = kwRaw > 0
-      ? semanticWeight * semScore + keywordWeight * kwNormalized
+      ? 0.7 * semScore + 0.3 * kwNormalized
       : semScore;
 
     scored.push({ slug: card.slug, store: card.store, dirPrefix: card.dirPrefix, score: finalScore });
