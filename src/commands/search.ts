@@ -7,6 +7,7 @@ import {
   EmbeddingCache,
   embedCards,
   cosineSimilarity,
+  createEmbeddingProvider,
   type EmbeddingProvider,
 } from "../lib/embeddings.js";
 import { join } from "node:path";
@@ -167,18 +168,22 @@ async function semanticSearch(
   if (limit === 0) return { output: "", exitCode: 0 };
 
   // Resolve embedding provider
-  const apiKey = options.config?.openaiApiKey ?? process.env.OPENAI_API_KEY;
   let provider: EmbeddingProvider;
   if (options._embeddingProvider) {
     provider = options._embeddingProvider;
   } else {
-    if (!apiKey) {
-      return {
-        output: "Semantic search requires an OpenAI API key. Set openaiApiKey in .memexrc or OPENAI_API_KEY env var.",
-        exitCode: 1,
-      };
+    try {
+      provider = await createEmbeddingProvider({
+        type: options.config?.embeddingProvider,
+        openaiApiKey: options.config?.openaiApiKey,
+        localModelPath: options.config?.localModelPath,
+        ollamaModel: options.config?.ollamaModel,
+        ollamaBaseUrl: options.config?.ollamaBaseUrl,
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      return { output: message, exitCode: 1 };
     }
-    provider = new OpenAIEmbeddingProvider(apiKey);
   }
 
   // Build / refresh embedding cache

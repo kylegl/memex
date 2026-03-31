@@ -41,5 +41,8 @@
     "marked": "^17.0.5",
     "typescript": "^5.9.3",
     "vitest": "^4.1.0"
+  },
+  "optionalDependencies": {
+    "node-llama-cpp": "^3.18.1"
   }
 }

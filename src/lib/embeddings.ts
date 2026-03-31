@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { readFile, writeFile, mkdir } from "node:fs/promises";
-import { request } from "node:https";
+import { request as httpsRequest } from "node:https";
+import { request as httpRequest } from "node:http";
 import { join, dirname } from "node:path";
 import type { CardStore } from "./store.js";
 
@@ -12,6 +13,10 @@ export interface EmbeddingProvider {
   readonly model: string;
   embed(texts: string[]): Promise<number[][]>;
 }
+
+// --- Provider type ---
+
+export type EmbeddingProviderType = "openai" | "local" | "ollama";
 
 /**
  * OpenAI embedding provider using text-embedding-3-small (1536 dims).
@@ -54,7 +59,7 @@ export class OpenAIEmbeddingProvider implements EmbeddingProvider {
         input: texts,
       });
 
-      const req = request(
+      const req = httpsRequest(
         {
           hostname: "api.openai.com",
           path: "/v1/embeddings",
@@ -98,6 +103,264 @@ export class OpenAIEmbeddingProvider implements EmbeddingProvider {
   }
 }
 
+// --- Local Embedding Provider (node-llama-cpp + GGUF) ---
+
+const DEFAULT_LOCAL_MODEL =
+  "hf:ggml-org/embeddinggemma-300m-qat-q8_0-GGUF/embeddinggemma-300m-qat-Q8_0.gguf";
+
+/**
+ * Normalize a vector to unit length.
+ * Handles NaN/Infinity values by replacing them with 0.
+ */
+function normalizeVector(vec: number[]): number[] {
+  const sanitized = vec.map((v) => (Number.isFinite(v) ? v : 0));
+  const magnitude = Math.sqrt(sanitized.reduce((sum, v) => sum + v * v, 0));
+  if (magnitude < 1e-10) return sanitized;
+  return sanitized.map((v) => v / magnitude);
+}
+
+/**
+ * Check whether node-llama-cpp is available (installed and importable).
+ */
+export async function isNodeLlamaCppAvailable(): Promise<boolean> {
+  try {
+    await import("node-llama-cpp");
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Local embedding provider using node-llama-cpp with a GGUF model.
+ *
+ * - Lazily loads node-llama-cpp and the model on first embed() call
+ * - Downloads the model automatically on first use (~328 MB)
+ * - Produces 768-dimensional vectors (with embeddinggemma-300m)
+ * - Requires node-llama-cpp as an optional dependency
+ */
+export class LocalEmbeddingProvider implements EmbeddingProvider {
+  readonly model: string;
+  private modelPath: string;
+  private context: unknown | null = null;
+  private initPromise: Promise<unknown> | null = null;
+
+  constructor(modelPath?: string) {
+    this.modelPath = modelPath ?? DEFAULT_LOCAL_MODEL;
+    // Use a cache-friendly model name for the EmbeddingCache file key
+    this.model = this.modelPath.includes("/")
+      ? this.modelPath.split("/").pop()!.replace(/\.gguf$/i, "")
+      : this.modelPath;
+  }
+
+  private async ensureContext(): Promise<{
+    getEmbeddingFor: (text: string) => Promise<{ vector: Float32Array }>;
+  }> {
+    if (this.context) {
+      return this.context as Awaited<ReturnType<typeof this.ensureContext>>;
+    }
+    if (this.initPromise) {
+      return this.initPromise as Promise<Awaited<ReturnType<typeof this.ensureContext>>>;
+    }
+
+    this.initPromise = (async () => {
+      try {
+        // Dynamic import — fails gracefully if node-llama-cpp is not installed
+        const { getLlama, resolveModelFile, LlamaLogLevel } = await import(
+          "node-llama-cpp"
+        );
+
+        const resolved = await resolveModelFile(this.modelPath);
+        const llama = await getLlama({ logLevel: LlamaLogLevel.error });
+        const model = await llama.loadModel({ modelPath: resolved });
+        const ctx = await model.createEmbeddingContext();
+
+        this.context = ctx;
+        return ctx;
+      } catch (err) {
+        this.initPromise = null;
+        const message =
+          err instanceof Error ? err.message : String(err);
+        if (message.includes("Cannot find package")) {
+          throw new Error(
+            "node-llama-cpp is not installed. Install it with: npm install node-llama-cpp"
+          );
+        }
+        throw new Error(`Failed to initialize local embedding model: ${message}`);
+      }
+    })();
+
+    return this.initPromise as Promise<Awaited<ReturnType<typeof this.ensureContext>>>;
+  }
+
+  async embed(texts: string[]): Promise<number[][]> {
+    if (texts.length === 0) return [];
+
+    const ctx = await this.ensureContext();
+    const results: number[][] = [];
+
+    for (const text of texts) {
+      const embedding = await ctx.getEmbeddingFor(text);
+      results.push(normalizeVector(Array.from(embedding.vector)));
+    }
+
+    return results;
+  }
+}
+
+// --- Ollama Embedding Provider ---
+
+/**
+ * Ollama embedding provider — calls a local Ollama server's /api/embed endpoint.
+ *
+ * Lightweight alternative that requires only a running Ollama instance.
+ * No native dependencies needed.
+ */
+export class OllamaEmbeddingProvider implements EmbeddingProvider {
+  readonly model: string;
+  private baseUrl: string;
+
+  constructor(options?: { model?: string; baseUrl?: string }) {
+    this.model = options?.model ?? process.env.MEMEX_OLLAMA_MODEL ?? "nomic-embed-text";
+    this.baseUrl =
+      options?.baseUrl ??
+      process.env.MEMEX_OLLAMA_BASE_URL ??
+      process.env.OLLAMA_HOST ??
+      "http://localhost:11434";
+  }
+
+  async embed(texts: string[]): Promise<number[][]> {
+    if (texts.length === 0) return [];
+
+    // Ollama /api/embed supports batch input
+    const body = JSON.stringify({
+      model: this.model,
+      input: texts,
+    });
+
+    const url = new URL("/api/embed", this.baseUrl);
+    const isHttps = url.protocol === "https:";
+    const requestFn = isHttps ? httpsRequest : httpRequest;
+
+    return new Promise((resolve, reject) => {
+      const req = requestFn(
+        {
+          hostname: url.hostname,
+          port: url.port || (isHttps ? 443 : 11434),
+          path: url.pathname,
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Content-Length": Buffer.byteLength(body),
+          },
+        },
+        (res) => {
+          let data = "";
+          res.on("data", (chunk: Buffer) => {
+            data += chunk.toString();
+          });
+          res.on("end", () => {
+            try {
+              const parsed = JSON.parse(data);
+              if (parsed.error) {
+                reject(new Error(`Ollama API error: ${parsed.error}`));
+                return;
+              }
+              if (!parsed.embeddings || !Array.isArray(parsed.embeddings)) {
+                reject(
+                  new Error(
+                    "Unexpected Ollama response: missing embeddings array"
+                  )
+                );
+                return;
+              }
+              resolve(
+                (parsed.embeddings as number[][]).map((v) =>
+                  normalizeVector(v)
+                )
+              );
+            } catch (e) {
+              reject(new Error(`Failed to parse Ollama response: ${e}`));
+            }
+          });
+        }
+      );
+
+      req.on("error", (err) => {
+        reject(
+          new Error(
+            `Cannot connect to Ollama at ${this.baseUrl}: ${err.message}. ` +
+              "Is Ollama running? Start it with: ollama serve"
+          )
+        );
+      });
+      req.write(body);
+      req.end();
+    });
+  }
+}
+
+// --- Provider factory ---
+
+export interface CreateProviderOptions {
+  type?: EmbeddingProviderType;
+  openaiApiKey?: string;
+  localModelPath?: string;
+  ollamaModel?: string;
+  ollamaBaseUrl?: string;
+}
+
+/**
+ * Create an embedding provider based on the requested type.
+ *
+ * Resolution order when type is not specified:
+ * 1. If OPENAI_API_KEY is available → OpenAI
+ * 2. If node-llama-cpp is installed → Local
+ * 3. Error with helpful message
+ */
+export async function createEmbeddingProvider(
+  options: CreateProviderOptions = {}
+): Promise<EmbeddingProvider> {
+  const requestedType =
+    options.type ??
+    (process.env.MEMEX_EMBEDDING_PROVIDER as EmbeddingProviderType | undefined);
+
+  // Explicit provider requested
+  if (requestedType === "openai") {
+    return new OpenAIEmbeddingProvider(options.openaiApiKey);
+  }
+  if (requestedType === "local") {
+    return new LocalEmbeddingProvider(options.localModelPath);
+  }
+  if (requestedType === "ollama") {
+    return new OllamaEmbeddingProvider({
+      model: options.ollamaModel,
+      baseUrl: options.ollamaBaseUrl,
+    });
+  }
+
+  // Auto-detect: try OpenAI first, then local, then ollama
+  const apiKey = options.openaiApiKey ?? process.env.OPENAI_API_KEY;
+  if (apiKey) {
+    return new OpenAIEmbeddingProvider(apiKey);
+  }
+
+  // Try local (node-llama-cpp)
+  if (await isNodeLlamaCppAvailable()) {
+    return new LocalEmbeddingProvider(options.localModelPath);
+  }
+
+  // No provider available — provide helpful error
+  throw new Error(
+    "No embedding provider available.\n" +
+      "Options:\n" +
+      "  1. Set OPENAI_API_KEY for OpenAI embeddings\n" +
+      "  2. Install node-llama-cpp for local embeddings: npm install node-llama-cpp\n" +
+      "  3. Run Ollama locally and set MEMEX_EMBEDDING_PROVIDER=ollama\n" +
+      "Configure via .memexrc { \"embeddingProvider\": \"local\" } or MEMEX_EMBEDDING_PROVIDER env var."
+  );
+}
+
 // --- Cache ---
 
 interface CacheEntry {
@@ -122,22 +385,22 @@ export class EmbeddingCache {
 
   constructor(
     private memexHome: string,
-    private model: string
+    private cacheModel: string
   ) {
     this.filePath = join(
       memexHome,
       ".memex",
       "embeddings",
-      `${model}.json`
+      `${cacheModel}.json`
     );
-    this.data = { model, version: 1, entries: {} };
+    this.data = { model: cacheModel, version: 1, entries: {} };
   }
 
   async load(): Promise<void> {
     try {
       const raw = await readFile(this.filePath, "utf-8");
       const parsed = JSON.parse(raw) as CacheData;
-      if (parsed.model === this.model && parsed.version === 1) {
+      if (parsed.model === this.cacheModel && parsed.version === 1) {
         this.data = parsed;
       }
     } catch {

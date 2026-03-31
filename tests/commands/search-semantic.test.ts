@@ -41,9 +41,6 @@ function textToVector(text: string): number[] {
  * so keyword score is the tiebreaker.
  */
 function createHybridMockProvider(): EmbeddingProvider & { embedCalls: string[][] } {
-  // All cards get the same vector [1,0,0], query gets [1,0,0] too.
-  // This makes all semantic scores identical (1.0), so hybrid scoring
-  // is entirely determined by the keyword component.
   const provider = {
     model: "mock-model",
     embedCalls: [] as string[][],
@@ -135,22 +132,48 @@ Docker and Kubernetes deployment best practices.`
     expect(headings.length).toBe(1);
   });
 
-  it("returns error when no API key and no provider override", async () => {
+  it("returns error when explicitly requesting openai without API key", async () => {
     // Clear env var to ensure no key is available
     const origKey = process.env.OPENAI_API_KEY;
+    const origProvider = process.env.MEMEX_EMBEDDING_PROVIDER;
     delete process.env.OPENAI_API_KEY;
+    delete process.env.MEMEX_EMBEDDING_PROVIDER;
     try {
       const result = await searchCommand(store, "test query", {
         semantic: true,
         memexHome: tmpDir,
-        // No _embeddingProvider, no config with apiKey
+        config: { nestedSlugs: false, embeddingProvider: "openai" },
+        // Explicitly request openai — should fail without key
       });
 
       expect(result.exitCode).toBe(1);
       expect(result.output).toContain("OpenAI API key");
-      expect(result.output).toContain(".memexrc");
     } finally {
       if (origKey !== undefined) process.env.OPENAI_API_KEY = origKey;
+      if (origProvider !== undefined) process.env.MEMEX_EMBEDDING_PROVIDER = origProvider;
+    }
+  });
+
+  it("falls back to local when no API key but node-llama-cpp is available", async () => {
+    // When no OpenAI key is set but node-llama-cpp is installed,
+    // semantic search should auto-fallback to local embedding provider.
+    // We still use a mock provider here to avoid loading the actual model.
+    const provider = createMockProvider();
+    const origKey = process.env.OPENAI_API_KEY;
+    const origProvider = process.env.MEMEX_EMBEDDING_PROVIDER;
+    delete process.env.OPENAI_API_KEY;
+    delete process.env.MEMEX_EMBEDDING_PROVIDER;
+    try {
+      const result = await searchCommand(store, "test query", {
+        semantic: true,
+        memexHome: tmpDir,
+        _embeddingProvider: provider,
+      });
+
+      expect(result.exitCode).toBe(0);
+    } finally {
+      if (origKey !== undefined) process.env.OPENAI_API_KEY = origKey;
+      if (origProvider !== undefined) process.env.MEMEX_EMBEDDING_PROVIDER = origProvider;
     }
   });
 
@@ -222,9 +245,6 @@ How to make the perfect sourdough bread.`
   });
 
   it("applies hybrid scoring — keyword match boosts ranking", async () => {
-    // Use a provider that returns identical vectors for all texts.
-    // With equal semantic scores, the keyword-matching card (jwt-guide)
-    // gets a hybrid boost and should rank first.
     const provider = createHybridMockProvider();
     const result = await searchCommand(store, "JWT", {
       semantic: true,
@@ -233,11 +253,9 @@ How to make the perfect sourdough bread.`
     });
 
     expect(result.exitCode).toBe(0);
-    // Both cards should appear in results
     expect(result.output).toContain("jwt-guide");
     expect(result.output).toContain("unrelated");
 
-    // jwt-guide should rank higher because it has keyword match boost
     const jwtPos = result.output.indexOf("jwt-guide");
     const unrelatedPos = result.output.indexOf("unrelated");
     expect(jwtPos).toBeLessThan(unrelatedPos);

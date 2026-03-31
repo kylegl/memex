@@ -67,4 +67,74 @@ describe("readConfig", () => {
     const config = await readConfig(tmpDir);
     expect(config).toEqual({ nestedSlugs: false });
   });
+
+  // --- embeddingProvider config ---
+
+  it("reads embeddingProvider: local from config file", async () => {
+    await writeFile(join(tmpDir, ".memexrc"), JSON.stringify({ embeddingProvider: "local" }));
+    const config = await readConfig(tmpDir);
+    expect(config.embeddingProvider).toBe("local");
+  });
+
+  it("reads embeddingProvider: openai from config file", async () => {
+    await writeFile(join(tmpDir, ".memexrc"), JSON.stringify({ embeddingProvider: "openai" }));
+    const config = await readConfig(tmpDir);
+    expect(config.embeddingProvider).toBe("openai");
+  });
+
+  it("reads embeddingProvider: ollama from config file", async () => {
+    await writeFile(join(tmpDir, ".memexrc"), JSON.stringify({ embeddingProvider: "ollama" }));
+    const config = await readConfig(tmpDir);
+    expect(config.embeddingProvider).toBe("ollama");
+  });
+
+  it("treats invalid embeddingProvider as undefined", async () => {
+    await writeFile(join(tmpDir, ".memexrc"), JSON.stringify({ embeddingProvider: "invalid" }));
+    const config = await readConfig(tmpDir);
+    expect(config.embeddingProvider).toBeUndefined();
+  });
+
+  it("treats non-string embeddingProvider as undefined", async () => {
+    await writeFile(join(tmpDir, ".memexrc"), JSON.stringify({ embeddingProvider: 42 }));
+    const config = await readConfig(tmpDir);
+    expect(config.embeddingProvider).toBeUndefined();
+  });
+
+  it("reads ollamaModel from config file", async () => {
+    await writeFile(join(tmpDir, ".memexrc"), JSON.stringify({ ollamaModel: "all-minilm" }));
+    const config = await readConfig(tmpDir);
+    expect(config.ollamaModel).toBe("all-minilm");
+  });
+
+  it("reads ollamaBaseUrl from config file", async () => {
+    await writeFile(join(tmpDir, ".memexrc"), JSON.stringify({ ollamaBaseUrl: "http://myhost:11434" }));
+    const config = await readConfig(tmpDir);
+    expect(config.ollamaBaseUrl).toBe("http://myhost:11434");
+  });
+
+  it("reads localModelPath from config file", async () => {
+    await writeFile(join(tmpDir, ".memexrc"), JSON.stringify({ localModelPath: "/path/to/model.gguf" }));
+    const config = await readConfig(tmpDir);
+    expect(config.localModelPath).toBe("/path/to/model.gguf");
+  });
+
+  it("reads full embedding config together", async () => {
+    await writeFile(
+      join(tmpDir, ".memexrc"),
+      JSON.stringify({
+        nestedSlugs: false,
+        embeddingProvider: "ollama",
+        ollamaModel: "nomic-embed-text",
+        ollamaBaseUrl: "http://localhost:11434",
+        localModelPath: "hf:some/model",
+        openaiApiKey: "sk-test",
+      })
+    );
+    const config = await readConfig(tmpDir);
+    expect(config.embeddingProvider).toBe("ollama");
+    expect(config.ollamaModel).toBe("nomic-embed-text");
+    expect(config.ollamaBaseUrl).toBe("http://localhost:11434");
+    expect(config.localModelPath).toBe("hf:some/model");
+    expect(config.openaiApiKey).toBe("sk-test");
+  });
 });
