@@ -10,9 +10,14 @@
   "files": [
     "dist",
     "pi-extension",
-    "skills"
+    "skills",
+    "docs",
+    "AGENTS.md",
+    "CLAUDE.md",
+    "GEMINI.md"
   ],
   "scripts": {
+    "prepare": "[ -d .git ] && cp scripts/pre-commit .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit || true",
     "build": "tsc",
     "postbuild": "node scripts/postbuild.mjs",
     "prepublishOnly": "npm run build",
