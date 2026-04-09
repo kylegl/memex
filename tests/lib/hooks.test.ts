@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { HookRegistry } from "../../src/lib/hooks.js";
+import { HookRegistry } from "../../src/core/hooks.js";
 
 describe("HookRegistry", () => {
   it("runs pre hooks in order", async () => {

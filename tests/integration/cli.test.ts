@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { exec as execCb } from "node:child_process";
-import { mkdtemp, rm, mkdir, writeFile } from "node:fs/promises";
+import { mkdtemp, rm, mkdir, writeFile, readFile, access } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -28,6 +28,15 @@ function run(
       child.stdin!.end();
     }
   });
+}
+
+async function fileExists(path: string): Promise<boolean> {
+  try {
+    await access(path);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 describe("CLI integration", () => {
@@ -144,5 +153,84 @@ Nested content.`;
     // With --nested, search shows full path slug
     const { stdout: nested } = await run(`node ${CLI_PATH} search --nested`, { env });
     expect(nested).toContain("sub/item");
+  });
+
+  it("organize succeeds and writes cards/index.md", async () => {
+    await writeFile(
+      join(tmpDir, "cards", "a.md"),
+      "---\ntitle: Card A\ncreated: 2026-03-18\nmodified: 2026-03-18\nsource: manual\n---\nSee [[b]]"
+    );
+    await writeFile(
+      join(tmpDir, "cards", "b.md"),
+      "---\ntitle: Card B\ncreated: 2026-03-18\nmodified: 2026-03-18\nsource: manual\n---\nStandalone"
+    );
+
+    const { stdout } = await run(`node ${CLI_PATH} organize`, { env });
+    expect(stdout).toContain("# Organize Report");
+    expect(stdout).toContain("## Index Rebuild");
+
+    const indexContent = await readFile(join(tmpDir, "cards", "index.md"), "utf-8");
+    expect(indexContent).toContain("title: Keyword Index");
+    expect(indexContent).toContain("generated: navigation-index");
+  });
+
+  it("organize creates nested navigation indexes when nestedSlugs is enabled", async () => {
+    await writeFile(join(tmpDir, ".memexrc"), JSON.stringify({ nestedSlugs: true }));
+    await mkdir(join(tmpDir, "cards", "notes", "sub"), { recursive: true });
+    await writeFile(
+      join(tmpDir, "cards", "notes", "topic.md"),
+      "---\ntitle: Topic\ncreated: 2026-03-18\nmodified: 2026-03-18\nsource: manual\n---\nTopic"
+    );
+    await writeFile(
+      join(tmpDir, "cards", "notes", "sub", "deep.md"),
+      "---\ntitle: Deep\ncreated: 2026-03-18\nmodified: 2026-03-18\nsource: manual\n---\nDeep"
+    );
+
+    const { stdout } = await run(`node ${CLI_PATH} organize`, { env });
+    expect(stdout).toContain("- mode: nested");
+
+    const rootIndex = await readFile(join(tmpDir, "cards", "index.md"), "utf-8");
+    const notesIndex = await readFile(join(tmpDir, "cards", "notes", "index.md"), "utf-8");
+    const subIndex = await readFile(join(tmpDir, "cards", "notes", "sub", "index.md"), "utf-8");
+
+    expect(rootIndex).toContain("[[notes/index]]");
+    expect(notesIndex).toContain("[[notes/sub/index]]");
+    expect(subIndex).toContain("[[notes/sub/deep]]");
+  });
+
+  it("organize does not create nested navigation indexes in flat mode", async () => {
+    await mkdir(join(tmpDir, "cards", "notes", "sub"), { recursive: true });
+    await writeFile(
+      join(tmpDir, "cards", "notes", "topic.md"),
+      "---\ntitle: Topic\ncreated: 2026-03-18\nmodified: 2026-03-18\nsource: manual\n---\nTopic"
+    );
+    await writeFile(
+      join(tmpDir, "cards", "notes", "sub", "deep.md"),
+      "---\ntitle: Deep\ncreated: 2026-03-18\nmodified: 2026-03-18\nsource: manual\n---\nDeep"
+    );
+
+    const { stdout } = await run(`node ${CLI_PATH} organize`, { env });
+    expect(stdout).toContain("- mode: flat");
+
+    expect(await fileExists(join(tmpDir, "cards", "notes", "index.md"))).toBe(false);
+    expect(await fileExists(join(tmpDir, "cards", "notes", "sub", "index.md"))).toBe(false);
+  });
+
+  it("organize --since passes date through to organizeCommand", async () => {
+    await writeFile(
+      join(tmpDir, "cards", "a.md"),
+      "---\ntitle: Card A\ncreated: 2026-03-18\nmodified: 2026-03-18\nsource: manual\n---\nSee [[b]]"
+    );
+    await writeFile(
+      join(tmpDir, "cards", "b.md"),
+      "---\ntitle: Card B\ncreated: 2026-03-18\nmodified: 2026-03-18\nsource: manual\n---\nStandalone"
+    );
+
+    const { stdout: allCards } = await run(`node ${CLI_PATH} organize`, { env });
+    expect(allCards).toContain("## Recently Modified Cards + Neighbors (check for contradictions)");
+
+    const { stdout: filtered } = await run(`node ${CLI_PATH} organize --since 2099-01-01`, { env });
+    expect(filtered).not.toContain("## Recently Modified Cards + Neighbors (check for contradictions)");
+    expect(filtered).toContain("## Index Rebuild");
   });
 });

@@ -3,8 +3,8 @@ import { mkdtemp, rm, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { writeCommand } from "../../src/commands/write.js";
-import { CardStore } from "../../src/lib/store.js";
-import { parseFrontmatter } from "../../src/lib/parser.js";
+import { CardStore } from "../../src/core/store.js";
+import { parseFrontmatter } from "../../src/core/parser.js";
 
 describe("writeCommand", () => {
   let tmpDir: string;

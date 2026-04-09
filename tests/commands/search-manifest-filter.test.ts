@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { searchCommand } from "../../src/commands/search.js";
 import type { ManifestFilter } from "../../src/commands/search.js";
-import { CardStore } from "../../src/lib/store.js";
+import { CardStore } from "../../src/core/store.js";
 
 describe("manifest pre-filter", () => {
   let tmpDir: string;

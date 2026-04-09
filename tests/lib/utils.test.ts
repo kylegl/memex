@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { semverSort } from "../../src/lib/utils.js";
+import { semverSort } from "../../src/core/utils.js";
 
 describe("semverSort", () => {
   it("sorts by major version correctly", () => {

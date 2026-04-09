@@ -3,8 +3,8 @@ import { mkdtemp, rm, mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { backlinksCommand } from "../../src/commands/backlinks.js";
-import { CardStore } from "../../src/lib/store.js";
-import { MemexConfig } from "../../src/lib/config.js";
+import { CardStore } from "../../src/core/store.js";
+import { MemexConfig } from "../../src/core/config.js";
 
 describe("backlinksCommand", () => {
   let tmpDir: string;

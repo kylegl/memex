@@ -5,7 +5,7 @@ import {
   isNodeLlamaCppAvailable,
   createEmbeddingProvider,
   chunkText,
-} from "../../src/lib/embeddings.js";
+} from "../../src/core/embeddings.js";
 
 describe("isNodeLlamaCppAvailable", () => {
   it("returns true when node-llama-cpp is installed", async () => {

@@ -3,7 +3,7 @@ import { mkdtemp, rm, mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { linksCommand } from "../../src/commands/links.js";
-import { CardStore } from "../../src/lib/store.js";
+import { CardStore } from "../../src/core/store.js";
 
 describe("linksCommand", () => {
   let tmpDir: string;

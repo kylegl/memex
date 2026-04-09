@@ -93,6 +93,7 @@ memex read <slug>             # read a card
 memex write <slug>            # write a card (stdin)
 memex links [slug]            # link graph stats
 memex archive <slug>          # archive a card
+memex organize [--since DATE] # analyze graph health + refresh navigation indexes
 memex serve                   # visual timeline UI
 memex sync                    # sync via git
 memex mcp                     # start MCP server (stdio)

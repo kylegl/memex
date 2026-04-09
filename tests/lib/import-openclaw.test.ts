@@ -13,7 +13,7 @@ import {
   generateSlugs,
   OpenClawImporter,
 } from "../../src/importers/openclaw.js";
-import { CardStore } from "../../src/lib/store.js";
+import { CardStore } from "../../src/core/store.js";
 
 describe("slugify", () => {
   it("converts to lowercase kebab-case", () => {

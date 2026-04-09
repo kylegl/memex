@@ -1,6 +1,6 @@
-import { parseFrontmatter, stringifyFrontmatter } from "../lib/parser.js";
-import { CardStore } from "../lib/store.js";
-import { autoSync } from "../lib/sync.js";
+import { parseFrontmatter, stringifyFrontmatter } from "../core/parser.js";
+import { CardStore } from "../core/store.js";
+import { autoSync } from "../core/sync.js";
 import { dirname } from "node:path";
 
 const REQUIRED_FIELDS = ["title", "created", "source"];

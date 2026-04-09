@@ -1,4 +1,4 @@
-import { readdir, readFile, writeFile, rename, mkdir } from "node:fs/promises";
+import { readdir, readFile, writeFile, rename, mkdir, access } from "node:fs/promises";
 import { join, basename, dirname, resolve, sep } from "node:path";
 
 // Characters not allowed in slugs (OS-reserved or dangerous)
@@ -103,9 +103,26 @@ export class CardStore {
     }
   }
 
+  isNestedSlugsEnabled(): boolean {
+    return this.nestedSlugs;
+  }
+
   async resolve(slug: string): Promise<string | null> {
-    const cards = await this.scanAll();
     const normalised = slug.replace(/\\/g, "/");
+
+    // In flat mode, "index" always resolves to cards/index.md only.
+    // This avoids stale nested */index.md artifacts hijacking recall.
+    if (!this.nestedSlugs && normalised === "index") {
+      const rootIndexPath = join(this.cardsDir, "index.md");
+      try {
+        await access(rootIndexPath);
+        return rootIndexPath;
+      } catch {
+        return null;
+      }
+    }
+
+    const cards = await this.scanAll();
     const found = cards.find((c) => c.slug === normalised);
     return found?.path ?? null;
   }

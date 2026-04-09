@@ -2,7 +2,7 @@ import {
   GitAdapter,
   readSyncConfig,
   writeSyncConfig,
-} from "../lib/sync.js";
+} from "../core/sync.js";
 
 interface SyncOptions {
   init?: boolean;

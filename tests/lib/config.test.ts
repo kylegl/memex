@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtemp, rm, mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { readConfig } from "../../src/lib/config.js";
+import { readConfig } from "../../src/core/config.js";
 
 describe("readConfig", () => {
   let tmpDir: string;

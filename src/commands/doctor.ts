@@ -1,4 +1,4 @@
-import { CardStore } from "../lib/store.js";
+import { CardStore } from "../core/store.js";
 
 interface DoctorResult {
   exitCode: number;

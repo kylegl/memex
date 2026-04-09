@@ -50,13 +50,15 @@ digraph recall {
 
 ### Step 1: Read the keyword index
 
-Run `memex read index` first. The index is a curated concept → card mapping (Luhmann's Schlagwortregister). It's much smaller than all cards combined and gives you the best entry points.
+Run `memex read index` first. The root index is intentionally compact and acts as the primary entrypoint.
+
+In nested-slug setups, it may mostly route through nested `.../index` MOCs (e.g. `[[notes/index]]`, `[[project/index]]`) instead of listing every card directly. Follow those nested index links as needed.
 
 If the index doesn't exist yet (card not found), fall back to Step 2.
 
 ### Step 2: Targeted reads or keyword search
 
-- **If index exists**: Pick the most relevant slugs from the index and `memex read` them directly.
+- **If index exists**: Pick the most relevant slugs from the root index. If it points to nested MOCs, read those MOCs first, then drill down to target cards.
 - **If no index**: Generate 2-3 search keywords (try both Chinese and English terms) and run `memex search <keyword>` for each.
 
 ### Step 3: Follow links
@@ -80,7 +82,7 @@ When you have enough context, summarize your findings and proceed with the task.
 
 ## Important
 
-- Always try `memex read index` first — it's the fastest path to relevant cards
+- Always start with `memex read index` — it is the root navigation entrypoint
 - Generate search queries in BOTH Chinese and English to maximize recall
 - If search returns nothing useful, that's fine — proceed without memory context
 - Summarize what you found before proceeding, so the findings are in your context

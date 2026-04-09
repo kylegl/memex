@@ -35,7 +35,7 @@
 └──────────────────┬──────────────────────────┘
                    │
 ┌──────────────────▼──────────────────────────┐
-│           Library Layer (src/lib/)           │
+│           Library Layer (src/core/)           │
 │  CardStore, Parser, Formatter, HookRegistry,│
 │  GitAdapter, EmbeddingProvider, Config       │
 └──────────────────┬──────────────────────────┘
@@ -61,7 +61,8 @@ src/
 │   ├── links.ts              # Link graph stats (single card or global)
 │   ├── backlinks.ts          # Find cards linking TO a slug
 │   ├── archive.ts            # Move card to archive/
-│   ├── organize.ts           # Network analysis: orphans, hubs, conflicts, pairs
+│   ├── organize.ts           # Network analysis + generated navigation-index rebuild
+│   ├── rebuild-index.ts      # Deterministic root/nested navigation index builder
 │   ├── serve.ts              # Web UI server (serve-ui.html)
 │   ├── sync.ts               # CLI sync orchestrator (init, pull, push, auto toggle)
 │   ├── import.ts             # Import dispatcher
@@ -140,7 +141,6 @@ need server-side revocation via [[blacklist-pattern]].
 ├── archive/            # Archived cards
 ├── .sync.json          # Sync config (remote, auto, lastSync)
 ├── .memexrc            # User config (JSON)
-├── .last-organize      # Timestamp of last organize
 ├── .memex/embeddings/  # Embedding cache (per-model JSON)
 └── .git/               # Git repo (if sync initialized)
 ```
@@ -153,7 +153,7 @@ need server-side revocation via [[blacklist-pattern]].
 |------|---------|-------|
 | `memex_recall` | Load prior knowledge at task start. Returns index card or card list. | `pre:recall` (autoFetch) |
 | `memex_retro` | Save atomic insight at task end. Auto-injects source, date, syncs. | `pre:retro` (autoFetch), `post:retro` (autoSync) |
-| `memex_organize` | Analyze network: orphans, hubs, conflicts, contradiction pairs. | `pre:organize` (autoFetch), `post:organize` (autoSync) |
+| `memex_organize` | Analyze network + refresh generated navigation indexes (root `index` + nested MOCs in nested mode). | `pre:organize` (autoFetch), `post:organize` (autoSync) |
 | `memex_pull` | Pull remote changes. | `pre:pull`, `post:pull` |
 | `memex_push` | Push local changes. | `pre:push`, `post:push` |
 
@@ -169,7 +169,7 @@ need server-side revocation via [[blacklist-pattern]].
 
 ## 6. Hook System
 
-**Registry** (`src/lib/hooks.ts`): `Map<HookKey, HookFn[]>` where `HookKey = "${Phase}:${Operation}"`.
+**Registry** (`src/core/hooks.ts`): `Map<HookKey, HookFn[]>` where `HookKey = "${Phase}:${Operation}"`.
 
 - **Phase**: `pre` | `post`
 - **Operation**: `recall` | `retro` | `organize` | `show` | `pull` | `push` | `init`
@@ -187,7 +187,7 @@ post:organize → autoSync
 
 ## 7. Sync System
 
-**Adapter**: `GitAdapter` (`src/lib/sync.ts`)
+**Adapter**: `GitAdapter` (`src/core/sync.ts`)
 
 - **Init**: Creates/reuses `memex-cards` GitHub repo via `gh` CLI, or accepts custom URL
 - **Pull**: `git fetch origin` → `git merge <remoteBranch> --no-edit`
@@ -217,14 +217,33 @@ post:organize → autoSync
 
 ## 9. Organize
 
-`organizeCommand` (`src/commands/organize.ts`) builds full link graph:
+`organizeCommand` (`src/commands/organize.ts`) performs graph analysis and then rebuilds generated navigation indexes.
 
+Graph analysis sections:
 1. **Link stats**: outbound/inbound counts per card
-2. **Orphan detection**: cards with 0 inbound (excluding `index`)
-3. **Hub detection**: cards with ≥10 inbound
+2. **Orphan detection**: cards with 0 inbound (excluding root `index` and generated navigation indexes)
+3. **Hub detection**: cards with ≥10 inbound (excluding root `index` and generated navigation indexes)
 4. **Conflict cards**: frontmatter `status: conflict`
 5. **Contradiction pairs**: recently modified cards + their neighbors (max 20 pairs, 300-char excerpts)
-6. **Incremental**: uses `~/.memex/.last-organize` timestamp; `--since` overrides
+6. **Incremental scope**: explicit `--since` / tool `since` input only
+
+Index rebuild behavior (`src/commands/rebuild-index.ts`):
+- Generated marker on managed cards:
+  - `source: organize`
+  - `generated: navigation-index`
+- **Nested mode (`nestedSlugs: true`)**:
+  - root `index` is compact top-level navigation (`[[top/index]]`) + root cards
+  - nested `<folder>/index` cards are generated as MOCs with immediate children only
+- **Flat mode (`nestedSlugs: false`)**:
+  - only root `index` is generated (category-grouped fallback)
+  - nested `*/index` cards are never generated
+- **Mixed-mode guardrail**:
+  - in flat mode, `CardStore.resolve("index")` always prefers `cards/index.md`
+  - stale generated nested indexes are reported as mixed-mode artifacts in organize output
+- **Collision guardrail**:
+  - user-authored nested `.../index` cards are not overwritten; organize reports skipped slugs
+- **No-op writes**:
+  - generated indexes are compare-before-write; unchanged cards are not rewritten
 
 ## 10. Platform Integrations
 

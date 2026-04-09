@@ -7,8 +7,8 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(readFileSync(join(__dirname, "..", "package.json"), "utf-8"));
-import { CardStore } from "./lib/store.js";
-import { readConfig } from "./lib/config.js";
+import { CardStore } from "./core/store.js";
+import { readConfig } from "./core/config.js";
 import { writeCommand } from "./commands/write.js";
 import { readCommand } from "./commands/read.js";
 import { searchCommand } from "./commands/search.js";
@@ -20,6 +20,7 @@ import { importCommand } from "./commands/import.js";
 import { doctorCommand } from "./commands/doctor.js";
 import { migrateCommand } from "./commands/migrate.js";
 import { backlinksCommand } from "./commands/backlinks.js";
+import { organizeCommand } from "./commands/organize.js";
 
 async function getStore(opts?: { nested?: boolean }): Promise<CardStore> {
   const home = process.env.MEMEX_HOME || join(homedir(), ".memex");
@@ -240,6 +241,17 @@ program
       process.stderr.write("No migration specified. Use --enable-nested to enable nestedSlugs.\n");
       process.exit(1);
     }
+  });
+
+program
+  .command("organize")
+  .description("Analyze graph health and refresh navigation indexes")
+  .option("--since <date>", "Only check cards modified since this date (YYYY-MM-DD)")
+  .action(async (opts: { since?: string }) => {
+    const store = await getStore();
+    const result = await organizeCommand(store, opts.since ?? null);
+    if (result.output) process.stdout.write(result.output + "\n");
+    process.exit(result.exitCode);
   });
 
 program.parse();

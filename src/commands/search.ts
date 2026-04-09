@@ -1,14 +1,14 @@
-import { CardStore } from "../lib/store.js";
-import { parseFrontmatter, extractLinks } from "../lib/parser.js";
-import { formatCardList, formatSearchResult } from "../lib/formatter.js";
-import { MemexConfig } from "../lib/config.js";
+import { CardStore } from "../core/store.js";
+import { parseFrontmatter, extractLinks } from "../core/parser.js";
+import { formatCardList, formatSearchResult } from "../core/formatter.js";
+import { MemexConfig } from "../core/config.js";
 import {
   EmbeddingCache,
   embedCards,
   cosineSimilarity,
   createEmbeddingProvider,
   type EmbeddingProvider,
-} from "../lib/embeddings.js";
+} from "../core/embeddings.js";
 import { join } from "node:path";
 
 const DEFAULT_LIMIT = 10;

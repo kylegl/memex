@@ -17,22 +17,22 @@ Build has a known TS error (`node-llama-cpp` optional dep). Ignore it — it com
 ## How The Code Is Layered
 
 ```
-MCP tools (src/mcp/)  →  Commands (src/commands/)  →  Lib (src/lib/)  →  Filesystem (~/.memex/)
+MCP tools (src/mcp/)  →  Commands (src/commands/)  →  Lib (src/core/)  →  Filesystem (~/.memex/)
      ↑ client-facing         ↑ business logic           ↑ data access
 ```
 
-**The rule**: MCP tools and CLI are thin wrappers. All logic lives in `src/commands/`. All data access in `src/lib/store.ts`. Don't put logic in the wrong layer.
+**The rule**: MCP tools and CLI are thin wrappers. All logic lives in `src/commands/`. All data access in `src/core/store.ts`. Don't put logic in the wrong layer.
 
 ## Files You'll Actually Need
 
 | When you're changing... | Read these first |
 |------------------------|-----------------|
-| Card read/write/slug behavior | `src/lib/store.ts` (164 lines — read all of it) |
+| Card read/write/slug behavior | `src/core/store.ts` (164 lines — read all of it) |
 | MCP tool behavior | `src/mcp/operations.ts` (high-level), `src/mcp/server.ts` (low-level) |
 | Search (keyword or semantic) | `src/commands/search.ts` (most complex file, ~390 lines) |
-| Sync / git operations | `src/lib/sync.ts` (GitAdapter, autoSync, autoFetch) |
-| Embeddings | `src/lib/embeddings.ts` (3 providers + cache) |
-| Card parsing / frontmatter | `src/lib/parser.ts` (47 lines — tiny but critical) |
+| Sync / git operations | `src/core/sync.ts` (GitAdapter, autoSync, autoFetch) |
+| Embeddings | `src/core/embeddings.ts` (3 providers + cache) |
+| Card parsing / frontmatter | `src/core/parser.ts` (47 lines — tiny but critical) |
 | Organize / graph analysis | `src/commands/organize.ts` |
 | Claude Code plugin hooks | `hooks/hooks.json` |
 | VS Code extension | `vscode-extension/src/extension.ts` |
@@ -83,7 +83,7 @@ If you **add an embedding provider**:
 4. Update auto-detection fallback chain (order matters: OpenAI → Local → Ollama → yours)
 
 If you **change sync behavior**:
-1. All in `src/lib/sync.ts` (GitAdapter)
+1. All in `src/core/sync.ts` (GitAdapter)
 2. `autoSync()` / `autoFetch()` are called by hooks — test offline tolerance
 
 ## Key Design Decisions (Don't Undo These)
@@ -103,3 +103,12 @@ Pi:           pi-extension/index.ts
 ```
 
 These are separate integration surfaces. Changing core code doesn't require updating them unless you change tool signatures or card format.
+
+## Project Management
+- [Tasks](.agents/tasks/task.md)
+- [Log](.agents/log)
+
+## Project Context
+- [Docs](.agents/docs/docs.md)
+- [Sources](.agents/sources/sources.md)
+- [Memex source code](.agents/sources/memex/)

@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { GitAdapter } from "../../src/lib/sync.js";
+import { GitAdapter } from "../../src/core/sync.js";
 
 function tempTestDir() {
   return join(tmpdir(), "nonexistent-memex-test-" + Date.now());
@@ -25,14 +25,14 @@ describe("GitAdapter.push", () => {
 
 describe("autoFetch", () => {
   it("is a no-op when sync not configured", async () => {
-    const { autoFetch } = await import("../../src/lib/sync.js");
+    const { autoFetch } = await import("../../src/core/sync.js");
     await autoFetch(tempTestDir());
   });
 });
 
 describe("autoSync", () => {
   it("is a no-op when auto is false", async () => {
-    const { autoSync } = await import("../../src/lib/sync.js");
+    const { autoSync } = await import("../../src/core/sync.js");
     // Should not throw even on nonexistent dir (auto defaults to false)
     await autoSync("/tmp/nonexistent-memex-test-" + Date.now());
   });
@@ -40,7 +40,7 @@ describe("autoSync", () => {
 
 describe("autoSync", () => {
   it("is a no-op when auto is false", async () => {
-    const { autoSync } = await import("../../src/lib/sync.js");
+    const { autoSync } = await import("../../src/core/sync.js");
     // Should not throw even on nonexistent dir (auto defaults to false)
     await autoSync("/tmp/nonexistent-memex-test-" + Date.now());
   });

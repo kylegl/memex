@@ -2,9 +2,9 @@ import { describe, it, expect, afterEach } from "vitest";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { createMemexServer } from "../../src/mcp/server.js";
-import { CardStore } from "../../src/lib/store.js";
+import { CardStore } from "../../src/core/store.js";
 import { mkdtemp, rm, mkdir, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { join, dirname } from "node:path";
 import { tmpdir } from "node:os";
 
 let tmpDir: string;
@@ -18,7 +18,9 @@ async function setup(cards: Record<string, string> = {}) {
   await mkdir(archiveDir, { recursive: true });
 
   for (const [slug, content] of Object.entries(cards)) {
-    await writeFile(join(cardsDir, `${slug}.md`), content);
+    const path = join(cardsDir, `${slug}.md`);
+    await mkdir(dirname(path), { recursive: true });
+    await writeFile(path, content);
   }
 
   const store = new CardStore(cardsDir, archiveDir);
@@ -47,6 +49,19 @@ describe("High-level operations", () => {
     const text = (result.content as Array<{ text: string }>)[0].text;
     expect(text).toContain("Keyword Index");
     expect(text).toContain("[[card-a]]");
+  });
+
+  it("memex_recall prefers root index over stale nested generated indexes in flat mode", async () => {
+    await setup({
+      "index": "---\ntitle: Keyword Index\ncreated: 2026-01-01\nsource: organize\ngenerated: navigation-index\n---\n## Root\n- [[card-a]] — Card A",
+      "notes/index": "---\ntitle: Notes Index\ncreated: 2026-01-01\nsource: organize\ngenerated: navigation-index\n---\n## Navigation\n- [[notes/sub/index]]",
+      "card-a": "---\ntitle: Card A\ncreated: 2026-01-01\nsource: claude-code\n---\nSome content",
+    });
+
+    const result = await client.callTool({ name: "memex_recall", arguments: {} });
+    const text = (result.content as Array<{ text: string }>)[0].text;
+    expect(text).toContain("## Root");
+    expect(text).not.toContain("[[notes/sub/index]]");
   });
 
   it("memex_recall returns card list when no index", async () => {
@@ -97,7 +112,7 @@ describe("High-level operations", () => {
     expect(text).toContain("memex sync --init");
   });
 
-  it("memex_organize returns link stats", async () => {
+  it("memex_organize returns link stats and index rebuild summary", async () => {
     await setup({
       "a": "---\ntitle: A\ncreated: 2026-01-01\nsource: claude-code\n---\nSee [[b]]",
       "b": "---\ntitle: B\ncreated: 2026-01-01\nsource: claude-code\n---\nStandalone",
@@ -106,6 +121,23 @@ describe("High-level operations", () => {
     const text = (result.content as Array<{ text: string }>)[0].text;
     expect(text).toContain("a");
     expect(text).toContain("b");
+    expect(text).toContain("## Index Rebuild");
+    expect(text).toContain("- created:");
+  });
+
+  it("memex_recall reads rebuilt root index after memex_organize", async () => {
+    await setup({
+      "a": "---\ntitle: A\ncreated: 2026-01-01\nsource: claude-code\ncategory: architecture\n---\nSee [[b]]",
+      "b": "---\ntitle: B\ncreated: 2026-01-01\nsource: claude-code\ncategory: project\n---\nStandalone",
+    });
+
+    await client.callTool({ name: "memex_organize", arguments: {} });
+
+    const recall = await client.callTool({ name: "memex_recall", arguments: {} });
+    const text = (recall.content as Array<{ text: string }>)[0].text;
+    expect(text).toContain("Keyword Index");
+    expect(text).toContain("[[a]]");
+    expect(text).toContain("[[b]]");
   });
 
   it("has all expected high-level tools", async () => {
@@ -118,5 +150,8 @@ describe("High-level operations", () => {
     expect(names).toContain("memex_pull");
     expect(names).toContain("memex_push");
     expect(names).not.toContain("memex_init");
+
+    const organizeTool = tools.find((t) => t.name === "memex_organize");
+    expect(organizeTool?.description).toContain("refresh generated navigation indexes");
   });
 });

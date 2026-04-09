@@ -1,6 +1,8 @@
-import { CardStore } from "../lib/store.js";
-import { parseFrontmatter, extractLinks } from "../lib/parser.js";
-import { formatLinkStats } from "../lib/formatter.js";
+import { readFile } from "node:fs/promises";
+import { CardStore } from "../core/store.js";
+import { parseFrontmatter, extractLinks } from "../core/parser.js";
+import { formatLinkStats } from "../core/formatter.js";
+import { buildIndexCommand } from "./rebuild-index.js";
 
 function toDateString(val: unknown): string {
   if (val instanceof Date) return val.toISOString().split("T")[0];
@@ -12,6 +14,19 @@ interface OrganizeResult {
   exitCode: number;
 }
 
+type CardInfo = {
+  title: string;
+  modified: string;
+  status: string;
+  content: string;
+  source: string;
+  generated: string;
+  isGeneratedNavigationIndex: boolean;
+};
+
+const NAV_INDEX_GENERATED = "navigation-index";
+const ORGANIZE_SOURCE = "organize";
+
 export async function organizeCommand(
   store: CardStore,
   lastOrganize: string | null,
@@ -22,22 +37,28 @@ export async function organizeCommand(
   // Build link graph
   const outboundMap = new Map<string, string[]>();
   const inboundMap = new Map<string, string[]>();
-  const cardData = new Map<string, { title: string; modified: string; status: string; content: string }>();
+  const cardData = new Map<string, CardInfo>();
 
   for (const card of cards) {
     inboundMap.set(card.slug, []);
   }
 
   for (const card of cards) {
-    const raw = await store.readCard(card.slug);
+    const raw = await readFile(card.path, "utf-8");
     const { data, content } = parseFrontmatter(raw);
     const links = extractLinks(content);
+    const source = String(data.source || "");
+    const generated = String(data.generated || "");
+
     outboundMap.set(card.slug, links);
     cardData.set(card.slug, {
       title: String(data.title || card.slug),
       modified: toDateString(data.modified || ""),
       status: String(data.status || ""),
       content: content.trim(),
+      source,
+      generated,
+      isGeneratedNavigationIndex: source === ORGANIZE_SOURCE && generated === NAV_INDEX_GENERATED,
     });
 
     for (const link of links) {
@@ -46,6 +67,11 @@ export async function organizeCommand(
       inboundMap.set(link, existing);
     }
   }
+
+  const isExcludedFromNoise = (slug: string): boolean => {
+    if (slug === "index") return true;
+    return cardData.get(slug)?.isGeneratedNavigationIndex === true;
+  };
 
   // Link stats
   const stats = cards.map((card) => ({
@@ -59,7 +85,7 @@ export async function organizeCommand(
   sections.push("## Link Stats\n" + formatLinkStats(stats));
 
   // Orphans
-  const orphans = stats.filter((s) => s.inbound === 0 && s.slug !== "index");
+  const orphans = stats.filter((s) => s.inbound === 0 && !isExcludedFromNoise(s.slug));
   if (orphans.length > 0) {
     sections.push(
       "## Orphans (no inbound links)\n" +
@@ -68,7 +94,7 @@ export async function organizeCommand(
   }
 
   // Hubs
-  const hubs = stats.filter((s) => s.inbound >= 10);
+  const hubs = stats.filter((s) => s.inbound >= 10 && !isExcludedFromNoise(s.slug));
   if (hubs.length > 0) {
     sections.push(
       "## Hubs (≥10 inbound links)\n" +
@@ -94,6 +120,7 @@ export async function organizeCommand(
   const recentCards: string[] = [];
   if (lastOrganize) {
     for (const card of cards) {
+      if (isExcludedFromNoise(card.slug)) continue;
       const info = cardData.get(card.slug);
       // Include cards with no date (conservative: better to over-check than miss)
       if (info && (!info.modified || info.modified >= lastOrganize)) {
@@ -103,7 +130,9 @@ export async function organizeCommand(
   } else {
     // First run: all cards are "recent"
     for (const card of cards) {
-      recentCards.push(card.slug);
+      if (!isExcludedFromNoise(card.slug)) {
+        recentCards.push(card.slug);
+      }
     }
   }
 
@@ -117,6 +146,8 @@ export async function organizeCommand(
 
       const neighbors = outboundMap.get(slug) || [];
       for (const neighbor of neighbors) {
+        if (isExcludedFromNoise(neighbor)) continue;
+
         const neighborInfo = cardData.get(neighbor);
         if (!neighborInfo) continue;
 
@@ -149,6 +180,28 @@ export async function organizeCommand(
       );
     }
   }
+
+  const indexResult = await buildIndexCommand(store);
+  const indexLines: string[] = [
+    `- mode: ${indexResult.nested ? "nested" : "flat"}`,
+    `- created: ${indexResult.created.length}`,
+    `- updated: ${indexResult.updated.length}`,
+    `- unchanged: ${indexResult.unchanged.length}`,
+    `- skipped: ${indexResult.skipped.length}`,
+    `- mixed-mode artifacts: ${indexResult.mixedModeArtifacts.length}`,
+  ];
+
+  if (indexResult.skipped.length > 0) {
+    indexLines.push("", "### Skipped");
+    indexLines.push(...indexResult.skipped.map((item) => `- ${item.slug} — ${item.reason}`));
+  }
+
+  if (indexResult.mixedModeArtifacts.length > 0) {
+    indexLines.push("", "### Mixed-mode Artifacts");
+    indexLines.push(...indexResult.mixedModeArtifacts.map((slug) => `- ${slug}`));
+  }
+
+  sections.push("## Index Rebuild\n" + indexLines.join("\n"));
 
   return { output: sections.join("\n\n"), exitCode: 0 };
 }

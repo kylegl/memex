@@ -1,6 +1,6 @@
-import { CardStore } from "../lib/store.js";
-import { parseFrontmatter, extractLinks } from "../lib/parser.js";
-import { formatLinkStats, formatCardLinks } from "../lib/formatter.js";
+import { CardStore } from "../core/store.js";
+import { parseFrontmatter, extractLinks } from "../core/parser.js";
+import { formatLinkStats, formatCardLinks } from "../core/formatter.js";
 
 interface LinksResult {
   output: string;

@@ -1,5 +1,5 @@
-import { CardStore } from "../lib/store.js";
-import { autoSync } from "../lib/sync.js";
+import { CardStore } from "../core/store.js";
+import { autoSync } from "../core/sync.js";
 import { dirname } from "node:path";
 
 interface ArchiveResult {

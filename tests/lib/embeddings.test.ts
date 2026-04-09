@@ -8,8 +8,8 @@ import {
   contentHash,
   embedCards,
   type EmbeddingProvider,
-} from "../../src/lib/embeddings.js";
-import { CardStore } from "../../src/lib/store.js";
+} from "../../src/core/embeddings.js";
+import { CardStore } from "../../src/core/store.js";
 
 // --- cosineSimilarity ---
 

@@ -1,6 +1,6 @@
-import { CardStore } from "../lib/store.js";
-import { parseFrontmatter, extractLinks } from "../lib/parser.js";
-import { MemexConfig } from "../lib/config.js";
+import { CardStore } from "../core/store.js";
+import { parseFrontmatter, extractLinks } from "../core/parser.js";
+import { MemexConfig } from "../core/config.js";
 import { join } from "node:path";
 
 interface BacklinksOptions {

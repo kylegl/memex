@@ -1,7 +1,7 @@
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { existsSync } from "node:fs";
-import { CardStore } from "../lib/store.js";
+import { CardStore } from "../core/store.js";
 import { getImporter, listImporters } from "../importers/index.js";
 
 interface ImportCommandResult {

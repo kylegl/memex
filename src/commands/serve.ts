@@ -5,9 +5,9 @@ import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { dirname } from "node:path";
 import { execFile } from "node:child_process";
-import { CardStore } from "../lib/store.js";
-import { parseFrontmatter, extractLinks } from "../lib/parser.js";
-import { readSyncConfig } from "../lib/sync.js";
+import { CardStore } from "../core/store.js";
+import { parseFrontmatter, extractLinks } from "../core/parser.js";
+import { readSyncConfig } from "../core/sync.js";
 
 function toDateString(val: unknown): string {
   if (!val) return "";

@@ -1,14 +1,14 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { CardStore } from "../lib/store.js";
-import { HookRegistry } from "../lib/hooks.js";
+import { CardStore } from "../core/store.js";
+import { HookRegistry } from "../core/hooks.js";
 import { searchCommand } from "../commands/search.js";
 import type { ManifestFilter } from "../commands/search.js";
 import { readCommand } from "../commands/read.js";
 import { writeCommand } from "../commands/write.js";
 import { linksCommand } from "../commands/links.js";
 import { organizeCommand } from "../commands/organize.js";
-import { stringifyFrontmatter } from "../lib/parser.js";
-import { GitAdapter, readSyncConfig } from "../lib/sync.js";
+import { stringifyFrontmatter } from "../core/parser.js";
+import { GitAdapter, readSyncConfig } from "../core/sync.js";
 import { z } from "zod";
 
 export function registerOperations(
@@ -92,7 +92,7 @@ export function registerOperations(
 
   // ---- organize ----
   server.registerTool("memex_organize", {
-    description: "Analyze the card network for maintenance. Returns link stats, orphans, hubs, unresolved conflicts, and recently modified cards paired with their neighbors for contradiction detection. Call this periodically to keep the knowledge graph healthy.",
+    description: "Analyze the card network for maintenance and refresh generated navigation indexes. Returns link stats, orphans, hubs, unresolved conflicts, recently modified cards paired with their neighbors for contradiction detection, and an index rebuild summary. Call this periodically to keep the knowledge graph healthy.",
     inputSchema: z.object({
       since: z.string().optional().describe("Only check cards modified since this date (YYYY-MM-DD). Omit for full scan."),
     }),

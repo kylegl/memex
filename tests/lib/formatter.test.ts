@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { formatSearchResult, formatCardList, formatLinkStats, formatCardLinks } from "../../src/lib/formatter.js";
+import { formatSearchResult, formatCardList, formatLinkStats, formatCardLinks } from "../../src/core/formatter.js";
 
 describe("formatCardList", () => {
   it("formats slug + title pairs", () => {

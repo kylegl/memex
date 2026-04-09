@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseFrontmatter, extractLinks, stringifyFrontmatter } from "../../src/lib/parser.js";
+import { parseFrontmatter, extractLinks, stringifyFrontmatter } from "../../src/core/parser.js";
 
 describe("parseFrontmatter", () => {
   it("parses valid frontmatter with all fields", () => {

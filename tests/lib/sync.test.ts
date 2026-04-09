@@ -8,7 +8,7 @@ import {
   readSyncConfig,
   writeSyncConfig,
   GitAdapter,
-} from "../../src/lib/sync.js";
+} from "../../src/core/sync.js";
 
 const execFile = promisify(execFileCb);
 

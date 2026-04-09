@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtemp, rm, mkdir, writeFile, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { CardStore, validateSlug } from "../../src/lib/store.js";
+import { CardStore, validateSlug } from "../../src/core/store.js";
 
 describe("CardStore", () => {
   let tmpDir: string;
@@ -38,6 +38,10 @@ describe("CardStore", () => {
       const files = await store.scanAll();
       expect(files).toEqual([]);
     });
+
+    it("reports nested slug mode as disabled by default", () => {
+      expect(store.isNestedSlugsEnabled()).toBe(false);
+    });
   });
 
   describe("resolve", () => {
@@ -52,6 +56,23 @@ describe("CardStore", () => {
       await writeFile(join(cardsDir, "sub", "nested.md"), "content");
       const path = await store.resolve("nested");
       expect(path).toBe(join(cardsDir, "sub", "nested.md"));
+    });
+
+    it("prefers root cards/index.md in flat mode when nested index files exist", async () => {
+      await mkdir(join(cardsDir, "notes"), { recursive: true });
+      await writeFile(join(cardsDir, "index.md"), "root");
+      await writeFile(join(cardsDir, "notes", "index.md"), "nested");
+
+      const path = await store.resolve("index");
+      expect(path).toBe(join(cardsDir, "index.md"));
+    });
+
+    it("returns null for index in flat mode when only nested */index.md exists", async () => {
+      await mkdir(join(cardsDir, "notes"), { recursive: true });
+      await writeFile(join(cardsDir, "notes", "index.md"), "nested");
+
+      const path = await store.resolve("index");
+      expect(path).toBeNull();
     });
 
     it("returns null when card not found", async () => {
@@ -254,6 +275,10 @@ describe("CardStore with nestedSlugs", () => {
       const slugs = files.map((f) => f.slug).sort();
       expect(slugs).toEqual(["a", "sub/b", "sub/deep/c"]);
     });
+
+    it("reports nested slug mode as enabled", () => {
+      expect(store.isNestedSlugsEnabled()).toBe(true);
+    });
   });
 
   describe("resolve with nestedSlugs", () => {
@@ -262,6 +287,13 @@ describe("CardStore with nestedSlugs", () => {
       await writeFile(join(cardsDir, "sub", "nested.md"), "content");
       const path = await store.resolve("sub/nested");
       expect(path).toBe(join(cardsDir, "sub", "nested.md"));
+    });
+
+    it("resolves nested index path with full slug", async () => {
+      await mkdir(join(cardsDir, "notes"), { recursive: true });
+      await writeFile(join(cardsDir, "notes", "index.md"), "content");
+      const path = await store.resolve("notes/index");
+      expect(path).toBe(join(cardsDir, "notes", "index.md"));
     });
 
     it("finds card by flat slug", async () => {
