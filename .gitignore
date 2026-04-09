@@ -4,3 +4,5 @@ dist/
 .mcpregistry_registry_token
 .claude/
 .superpowers/
+.agents/sources/
+.agents/runtime/
