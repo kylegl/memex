@@ -1,4 +1,9 @@
+import { readFile } from "node:fs/promises";
 import { CardStore } from "../core/store.js";
+import { parseFrontmatter } from "../core/parser.js";
+
+const ORGANIZE_SOURCE = "organize";
+const NAV_INDEX_GENERATED = "navigation-index";
 
 interface DoctorResult {
   exitCode: number;
@@ -18,11 +23,23 @@ export async function doctorCommand(
   try {
     // Scan with basename mode (nestedSlugs=false) to find collisions
     const basenameStore = new CardStore(cardsDir, archiveDir, false);
-    const cards = await basenameStore.scanAll();
+    const nestedStore = new CardStore(cardsDir, archiveDir, true);
+    const [cards, nestedCards] = await Promise.all([
+      basenameStore.scanAll(),
+      nestedStore.scanAll(),
+    ]);
+
+    const generatedNavigationIndexPaths = new Set<string>();
+    for (const card of nestedCards) {
+      if (await isGeneratedNavigationIndex(card.path)) {
+        generatedNavigationIndexPaths.add(card.path);
+      }
+    }
 
     // Group by slug to find collisions
     const slugMap = new Map<string, string[]>();
     for (const card of cards) {
+      if (generatedNavigationIndexPaths.has(card.path)) continue;
       if (!slugMap.has(card.slug)) {
         slugMap.set(card.slug, []);
       }
@@ -33,9 +50,6 @@ export async function doctorCommand(
     const collisions: CollisionGroup[] = [];
     for (const [slug, paths] of slugMap.entries()) {
       if (paths.length > 1) {
-        // Get full paths using nested mode
-        const nestedStore = new CardStore(cardsDir, archiveDir, true);
-        const nestedCards = await nestedStore.scanAll();
         const fullPaths = paths.map((path) => {
           const found = nestedCards.find((c) => c.path === path);
           return found?.slug ?? path;
@@ -73,5 +87,15 @@ export async function doctorCommand(
       exitCode: 1,
       output: `Error checking collisions: ${(e as Error).message}`,
     };
+  }
+}
+
+async function isGeneratedNavigationIndex(path: string): Promise<boolean> {
+  try {
+    const raw = await readFile(path, "utf-8");
+    const { data } = parseFrontmatter(raw);
+    return data.source === ORGANIZE_SOURCE && data.generated === NAV_INDEX_GENERATED;
+  } catch {
+    return false;
   }
 }

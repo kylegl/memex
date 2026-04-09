@@ -68,4 +68,20 @@ describe("doctorCommand", () => {
     expect(result.output).toContain("would become: card");
     expect(result.output).toContain("would become: nested/deep/card");
   });
+
+  it("ignores generated nested navigation indexes during collision checks", async () => {
+    await mkdir(join(cardsDir, "notes"), { recursive: true });
+    await writeFile(
+      join(cardsDir, "index.md"),
+      "---\ntitle: Keyword Index\ncreated: 2026-01-01\nsource: organize\ngenerated: navigation-index\n---\n## Navigation\n"
+    );
+    await writeFile(
+      join(cardsDir, "notes", "index.md"),
+      "---\ntitle: Notes Index\ncreated: 2026-01-01\nsource: organize\ngenerated: navigation-index\n---\n## Navigation\n"
+    );
+
+    const result = await doctorCommand(cardsDir, archiveDir);
+    expect(result.exitCode).toBe(0);
+    expect(result.output).toContain("No slug collisions found");
+  });
 });

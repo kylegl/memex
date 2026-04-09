@@ -84,4 +84,23 @@ describe("migrateCommand", () => {
       expect((e as NodeJS.ErrnoException).code).toBe("ENOENT");
     }
   });
+
+  it("allows migration when only generated nested navigation indexes share basename index", async () => {
+    await mkdir(join(cardsDir, "notes"), { recursive: true });
+    await writeFile(
+      join(cardsDir, "index.md"),
+      "---\ntitle: Keyword Index\ncreated: 2026-01-01\nsource: organize\ngenerated: navigation-index\n---\n## Navigation\n"
+    );
+    await writeFile(
+      join(cardsDir, "notes", "index.md"),
+      "---\ntitle: Notes Index\ncreated: 2026-01-01\nsource: organize\ngenerated: navigation-index\n---\n## Navigation\n"
+    );
+
+    const result = await migrateCommand(tmpDir, cardsDir, archiveDir);
+    expect(result.success).toBe(true);
+
+    const configPath = join(tmpDir, ".memexrc");
+    const config = JSON.parse(await readFile(configPath, "utf-8"));
+    expect(config.nestedSlugs).toBe(true);
+  });
 });
