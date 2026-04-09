@@ -16,6 +16,12 @@ export interface MemexConfig {
   ollamaBaseUrl?: string;
   /** Local GGUF model path or HuggingFace URI for node-llama-cpp. */
   localModelPath?: string;
+  /** Configured proposal agent name (AI organization layer). */
+  memexProposalAgentName?: string;
+  /** Configured proposal model identifier. */
+  memexProposalAgentModel?: string;
+  /** Configured proposal reasoning effort. */
+  memexProposalAgentThinking?: "low" | "medium" | "high";
 }
 
 /**
@@ -39,6 +45,11 @@ export async function readConfig(memexHome: string): Promise<MemexConfig> {
       ollamaModel: typeof parsed.ollamaModel === "string" ? parsed.ollamaModel : undefined,
       ollamaBaseUrl: typeof parsed.ollamaBaseUrl === "string" ? parsed.ollamaBaseUrl : undefined,
       localModelPath: typeof parsed.localModelPath === "string" ? parsed.localModelPath : undefined,
+      memexProposalAgentName: typeof parsed.memexProposalAgentName === "string" ? parsed.memexProposalAgentName : undefined,
+      memexProposalAgentModel: typeof parsed.memexProposalAgentModel === "string" ? parsed.memexProposalAgentModel : undefined,
+      memexProposalAgentThinking: isValidThinking(parsed.memexProposalAgentThinking)
+        ? parsed.memexProposalAgentThinking
+        : undefined,
     };
   } catch {
     // File doesn't exist or invalid JSON - return defaults
@@ -50,4 +61,8 @@ export async function readConfig(memexHome: string): Promise<MemexConfig> {
 
 function isValidProvider(value: unknown): value is EmbeddingProviderType {
   return value === "openai" || value === "local" || value === "ollama";
+}
+
+function isValidThinking(value: unknown): value is "low" | "medium" | "high" {
+  return value === "low" || value === "medium" || value === "high";
 }

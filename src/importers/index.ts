@@ -11,6 +11,7 @@ import { CardStore } from "../core/store.js";
 export interface ImportResult {
   created: number;
   skipped: number;
+  createdSlugs: string[];
 }
 
 export interface ImportOptions {

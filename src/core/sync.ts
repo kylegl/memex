@@ -185,10 +185,12 @@ export class GitAdapter implements SyncAdapter {
       }
     }
 
-    // Commit local content first
-    // Scope add to cards/ and archive/ only (don't stage unrelated files in ~/.memex)
+    // Commit durable memex state first.
+    // Scope add to canonical markdown plus git-tracked operational organization state.
     await execFile("git", ["-C", this.home, "add", "cards"]);
     try { await execFile("git", ["-C", this.home, "add", "archive"]); } catch { /* archive dir may not exist */ }
+    try { await execFile("git", ["-C", this.home, "add", ".memex/proposals"]); } catch { /* proposals dir may not exist */ }
+    try { await execFile("git", ["-C", this.home, "add", ".memex/organization-rules.json"]); } catch { /* rules file may not exist */ }
     try {
       await execFile("git", [
         "-C",
@@ -256,9 +258,11 @@ export class GitAdapter implements SyncAdapter {
     if (!config.remote) {
       return { success: false, message: "Not configured." };
     }
-    // Scope add to cards/ and archive/ only (don't stage unrelated files in ~/.memex)
+    // Scope add to canonical markdown plus durable organization state only.
     await execFile("git", ["-C", this.home, "add", "cards"]);
     try { await execFile("git", ["-C", this.home, "add", "archive"]); } catch { /* archive dir may not exist */ }
+    try { await execFile("git", ["-C", this.home, "add", ".memex/proposals"]); } catch { /* proposals dir may not exist */ }
+    try { await execFile("git", ["-C", this.home, "add", ".memex/organization-rules.json"]); } catch { /* rules file may not exist */ }
     try {
       const ts = new Date().toISOString();
       await execFile("git", ["-C", this.home, "commit", "-m", `memex sync ${ts}`]);

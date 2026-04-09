@@ -7,6 +7,7 @@ import { readCommand } from "../commands/read.js";
 import { writeCommand } from "../commands/write.js";
 import { linksCommand } from "../commands/links.js";
 import { organizeCommand } from "../commands/organize.js";
+import { classifySlugsForEvent, isAutoClassifyEnabled } from "../commands/classify.js";
 import { stringifyFrontmatter } from "../core/parser.js";
 import { GitAdapter, readSyncConfig } from "../core/sync.js";
 import { z } from "zod";
@@ -74,7 +75,19 @@ export function registerOperations(
     if (category) data.category = category;
     const content = stringifyFrontmatter(body, data);
 
-    const result = await writeCommand(store, slug, content);
+    let result: Awaited<ReturnType<typeof writeCommand>>;
+    try {
+      result = await writeCommand(store, slug, content, {
+        afterWrite: async ({ slug: writtenSlug }) => {
+          if (!isAutoClassifyEnabled()) return;
+          const classify = await classifySlugsForEvent(store, home, [writtenSlug], "post-retro");
+          if (!classify.success) throw new Error(classify.output);
+        },
+      });
+    } catch (error) {
+      return { content: [{ type: "text" as const, text: (error as Error).message }], isError: true };
+    }
+
     if (!result.success) {
       return { content: [{ type: "text" as const, text: result.error! }], isError: true };
     }
@@ -99,7 +112,7 @@ export function registerOperations(
   }, async ({ since }) => {
     await hooks.run("pre", "organize");
 
-    const result = await organizeCommand(store, since ?? null);
+    const result = await organizeCommand(store, since ?? null, { memexHome: home });
 
     await hooks.run("post", "organize");
 

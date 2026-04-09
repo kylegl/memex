@@ -10,7 +10,16 @@ interface WriteResult {
   error?: string;
 }
 
-export async function writeCommand(store: CardStore, slug: string, input: string): Promise<WriteResult> {
+interface WriteCommandOptions {
+  afterWrite?: (ctx: { slug: string; content: string }) => Promise<void>;
+}
+
+export async function writeCommand(
+  store: CardStore,
+  slug: string,
+  input: string,
+  options: WriteCommandOptions = {},
+): Promise<WriteResult> {
   const { data, content } = parseFrontmatter(input);
 
   const missing = REQUIRED_FIELDS.filter((f) => !(f in data));
@@ -28,5 +37,10 @@ export async function writeCommand(store: CardStore, slug: string, input: string
   const output = stringifyFrontmatter(content, data);
   await store.writeCard(slug, output);
   await autoSync(dirname(store.cardsDir));
+
+  if (options.afterWrite) {
+    await options.afterWrite({ slug, content: output });
+  }
+
   return { success: true };
 }

@@ -210,4 +210,24 @@ describe("stringifyFrontmatter", () => {
     // Should be quoted and single quotes escaped
     expect(result).toContain("'it''s a [test]: #1 & *important*'");
   });
+
+  it("roundtrips organization fields and unknown keys", () => {
+    const serialized = stringifyFrontmatter("Body", {
+      title: "Org card",
+      created: "2026-04-09",
+      source: "manual",
+      type: "project",
+      project: "memex",
+      package: "core",
+      domain: "memory",
+      customField: "legacy-value",
+    });
+
+    const parsed = parseFrontmatter(serialized);
+    expect(parsed.data.type).toBe("project");
+    expect(parsed.data.project).toBe("memex");
+    expect(parsed.data.package).toBe("core");
+    expect(parsed.data.domain).toBe("memory");
+    expect(parsed.data.customField).toBe("legacy-value");
+  });
 });

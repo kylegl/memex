@@ -1,8 +1,8 @@
 ---
 plan_id: agentify-memex
 title: make organize deterministic over proposals and routing rules
-status: idle
-updated: 2026-04-09T00:00:00Z
+status: completed
+updated: 2026-04-09T20:34:00Z
 ---
 
 Teach organize to consume the proposal layer while keeping the deterministic index builder authoritative.
@@ -27,3 +27,8 @@ Teach organize to consume the proposal layer while keeping the deterministic ind
 - [ ] User-authored indexes are never overwritten.
 - [ ] Related links and compact navigation are generated only from approved or safe inputs.
 - [ ] The organize and rebuild-index test suites pass in both flat and nested modes.
+
+## Skill alignment
+- Use `memex-organize` as the operator-facing validation workflow for organize/index behavior.
+- Use `quality-engineer` to define precedence and no-op regression coverage.
+- Use `memex-retro` when precedence/collision handling yields reusable design insight.

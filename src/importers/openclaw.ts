@@ -109,6 +109,7 @@ export class OpenClawImporter implements Importer {
 
     let created = 0;
     let skipped = 0;
+    const createdSlugs: string[] = [];
 
     for (const file of files) {
       const content = await readFile(join(sourceDir, file), "utf-8");
@@ -141,9 +142,10 @@ export class OpenClawImporter implements Importer {
           onLog(`  ✓ ${slug}.md`);
         }
         created++;
+        createdSlugs.push(slug);
       }
     }
 
-    return { created, skipped };
+    return { created, skipped, createdSlugs };
   }
 }

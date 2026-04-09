@@ -137,4 +137,30 @@ describe("readConfig", () => {
     expect(config.localModelPath).toBe("hf:some/model");
     expect(config.openaiApiKey).toBe("sk-test");
   });
+
+  it("reads memex proposal agent config", async () => {
+    await writeFile(
+      join(tmpDir, ".memexrc"),
+      JSON.stringify({
+        memexProposalAgentName: "agent-a",
+        memexProposalAgentModel: "model-a",
+        memexProposalAgentThinking: "high",
+      }),
+    );
+
+    const config = await readConfig(tmpDir);
+    expect(config.memexProposalAgentName).toBe("agent-a");
+    expect(config.memexProposalAgentModel).toBe("model-a");
+    expect(config.memexProposalAgentThinking).toBe("high");
+  });
+
+  it("drops invalid memex proposal thinking values", async () => {
+    await writeFile(
+      join(tmpDir, ".memexrc"),
+      JSON.stringify({ memexProposalAgentThinking: "extreme" }),
+    );
+
+    const config = await readConfig(tmpDir);
+    expect(config.memexProposalAgentThinking).toBeUndefined();
+  });
 });

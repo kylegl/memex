@@ -8,12 +8,19 @@ interface ImportCommandResult {
   success: boolean;
   output?: string;
   error?: string;
+  importedSlugs?: string[];
+}
+
+interface ImportCommandOptions {
+  dryRun?: boolean;
+  dir?: string;
+  afterImport?: (ctx: { importedSlugs: string[] }) => Promise<void>;
 }
 
 export async function importCommand(
   store: CardStore,
   source: string | undefined,
-  opts: { dryRun?: boolean; dir?: string }
+  opts: ImportCommandOptions,
 ): Promise<ImportCommandResult> {
   if (!source) {
     const available = listImporters();
@@ -56,5 +63,9 @@ export async function importCommand(
     logs.push("Run 'memex serve' to visualize!");
   }
 
-  return { success: true, output: logs.join("\n") };
+  if (!opts.dryRun && result.createdSlugs.length > 0 && opts.afterImport) {
+    await opts.afterImport({ importedSlugs: result.createdSlugs });
+  }
+
+  return { success: true, output: logs.join("\n"), importedSlugs: result.createdSlugs };
 }

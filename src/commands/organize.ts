@@ -1,7 +1,8 @@
 import { readFile } from "node:fs/promises";
 import { CardStore } from "../core/store.js";
-import { parseFrontmatter, extractLinks } from "../core/parser.js";
+import { parseFrontmatter, extractLinks, stringifyFrontmatter } from "../core/parser.js";
 import { formatLinkStats } from "../core/formatter.js";
+import { OrganizationStore, proposalTargetPathToSlug, resolveOrganizationFields } from "../core/organization.js";
 import { buildIndexCommand } from "./rebuild-index.js";
 
 function toDateString(val: unknown): string {
@@ -30,6 +31,7 @@ const ORGANIZE_SOURCE = "organize";
 export async function organizeCommand(
   store: CardStore,
   lastOrganize: string | null,
+  options: { memexHome?: string } = {},
 ): Promise<OrganizeResult> {
   const cards = await store.scanAll();
   if (cards.length === 0) return { output: "No cards yet.", exitCode: 0 };
@@ -181,7 +183,63 @@ export async function organizeCommand(
     }
   }
 
-  const indexResult = await buildIndexCommand(store);
+  let proposalApplied = 0;
+  let proposalPending = 0;
+
+  if (options.memexHome) {
+    const orgStore = new OrganizationStore(options.memexHome);
+    const proposals = await orgStore.listProposals();
+    const rules = await orgStore.readRules();
+
+    const actionable = proposals.filter((proposal) =>
+      proposal.status === "approved"
+      || (proposal.status === "pending" && proposal.autoSafe === true),
+    );
+
+    for (const proposal of actionable) {
+      if ((proposal.kind === "classify" || proposal.kind === "route") && proposal.confidence >= 0.9) {
+        const slug = proposalTargetPathToSlug(proposal.targetPath);
+        if (!slug) continue;
+
+        try {
+          const raw = await store.readCard(slug);
+          const { data, content } = parseFrontmatter(raw);
+          const resolution = resolveOrganizationFields(proposal.targetPath, data, rules, [proposal]);
+
+          let mutated = false;
+          if (resolution.type && data.type !== resolution.type) {
+            data.type = resolution.type;
+            mutated = true;
+          }
+          if (resolution.project && data.project !== resolution.project) {
+            data.project = resolution.project;
+            mutated = true;
+          }
+          if (resolution.package && data.package !== resolution.package) {
+            data.package = resolution.package;
+            mutated = true;
+          }
+          if (resolution.domain && data.domain !== resolution.domain) {
+            data.domain = resolution.domain;
+            mutated = true;
+          }
+
+          if (mutated) {
+            await store.writeCard(slug, stringifyFrontmatter(content, data));
+          }
+
+          await orgStore.updateProposalStatus(proposal.id, "applied");
+          proposalApplied += 1;
+        } catch {
+          proposalPending += 1;
+        }
+      } else {
+        proposalPending += 1;
+      }
+    }
+  }
+
+  const indexResult = await buildIndexCommand(store, { memexHome: options.memexHome });
   const indexLines: string[] = [
     `- mode: ${indexResult.nested ? "nested" : "flat"}`,
     `- created: ${indexResult.created.length}`,
@@ -203,5 +261,10 @@ export async function organizeCommand(
 
   sections.push("## Index Rebuild\n" + indexLines.join("\n"));
 
+  if (options.memexHome) {
+    sections.push("## Proposal Reconciliation\n" + [`- applied: ${proposalApplied}`, `- pending: ${proposalPending}`].join("\n"));
+  }
+
   return { output: sections.join("\n\n"), exitCode: 0 };
 }
+

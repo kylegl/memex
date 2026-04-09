@@ -21,6 +21,9 @@ import { doctorCommand } from "./commands/doctor.js";
 import { migrateCommand } from "./commands/migrate.js";
 import { backlinksCommand } from "./commands/backlinks.js";
 import { organizeCommand } from "./commands/organize.js";
+import { classifyCommand, classifyRecentCommand, classifySlugsForEvent, isAutoClassifyEnabled } from "./commands/classify.js";
+import { reviewCommand } from "./commands/review.js";
+import { maintainCommand } from "./commands/maintain.js";
 
 async function getStore(opts?: { nested?: boolean }): Promise<CardStore> {
   const home = process.env.MEMEX_HOME || join(homedir(), ".memex");
@@ -83,11 +86,24 @@ program
   .command("write <slug>")
   .description("Write a card (content via stdin)")
   .action(async (slug: string) => {
+    const home = process.env.MEMEX_HOME || join(homedir(), ".memex");
     const store = await getStore();
     const input = await readStdin();
-    const result = await writeCommand(store, slug, input);
-    if (!result.success) {
-      process.stderr.write(result.error! + "\n");
+
+    try {
+      const result = await writeCommand(store, slug, input, {
+        afterWrite: async ({ slug: writtenSlug }) => {
+          if (!isAutoClassifyEnabled()) return;
+          const classify = await classifySlugsForEvent(store, home, [writtenSlug], "post-write");
+          if (!classify.success) throw new Error(classify.output);
+        },
+      });
+      if (!result.success) {
+        process.stderr.write(result.error! + "\n");
+        process.exit(1);
+      }
+    } catch (error) {
+      process.stderr.write((error as Error).message + "\n");
       process.exit(1);
     }
   });
@@ -193,11 +209,26 @@ program
   .option("--dry-run", "Preview without writing")
   .option("--dir <path>", "Override source directory")
   .action(async (source: string | undefined, opts: { dryRun?: boolean; dir?: string }) => {
+    const home = process.env.MEMEX_HOME || join(homedir(), ".memex");
     const store = await getStore();
-    const result = await importCommand(store, source, opts);
-    if (result.output) process.stdout.write(result.output + "\n");
-    if (!result.success) {
-      if (result.error) process.stderr.write(result.error + "\n");
+
+    try {
+      const result = await importCommand(store, source, {
+        ...opts,
+        afterImport: async ({ importedSlugs }) => {
+          if (!isAutoClassifyEnabled()) return;
+          if (importedSlugs.length === 0) return;
+          const classify = await classifySlugsForEvent(store, home, importedSlugs, "post-import");
+          if (!classify.success) throw new Error(classify.output);
+        },
+      });
+      if (result.output) process.stdout.write(result.output + "\n");
+      if (!result.success) {
+        if (result.error) process.stderr.write(result.error + "\n");
+        process.exit(1);
+      }
+    } catch (error) {
+      process.stderr.write((error as Error).message + "\n");
       process.exit(1);
     }
   });
@@ -248,10 +279,86 @@ program
   .description("Analyze graph health and refresh navigation indexes")
   .option("--since <date>", "Only check cards modified since this date (YYYY-MM-DD)")
   .action(async (opts: { since?: string }) => {
+    const home = process.env.MEMEX_HOME || join(homedir(), ".memex");
     const store = await getStore();
-    const result = await organizeCommand(store, opts.since ?? null);
+    const result = await organizeCommand(store, opts.since ?? null, { memexHome: home });
     if (result.output) process.stdout.write(result.output + "\n");
     process.exit(result.exitCode);
+  });
+
+program
+  .command("classify")
+  .description("Classify one/all/recent cards into bounded organization proposals")
+  .option("--slug <slug>", "Classify one card by slug")
+  .option("--recent <date>", "Classify recently modified cards since date (YYYY-MM-DD)")
+  .option("--dry-run", "Preview proposals without writing proposal files")
+  .option("--apply-safe", "Auto-apply safe high-confidence classify proposals")
+  .option("--explain", "Include rationale in output")
+  .action(async (opts: { slug?: string; recent?: string; dryRun?: boolean; applySafe?: boolean; explain?: boolean }) => {
+    const home = process.env.MEMEX_HOME || join(homedir(), ".memex");
+    const store = await getStore();
+    const result = opts.recent
+      ? await classifyRecentCommand(store, {
+        memexHome: home,
+        since: opts.recent,
+        slug: opts.slug,
+        dryRun: opts.dryRun,
+        applySafe: opts.applySafe,
+        explain: opts.explain,
+      })
+      : await classifyCommand(store, {
+        memexHome: home,
+        slug: opts.slug,
+        dryRun: opts.dryRun,
+        applySafe: opts.applySafe,
+        explain: opts.explain,
+      });
+
+    const stream = result.success ? process.stdout : process.stderr;
+    stream.write(result.output + "\n");
+    if (!result.success) process.exit(1);
+  });
+
+program
+  .command("review")
+  .description("Review organization proposals (list, approve, reject)")
+  .option("--status <status>", "Filter list by status")
+  .option("--approve <id>", "Approve a proposal id")
+  .option("--reject <id>", "Reject a proposal id")
+  .action(async (opts: { status?: string; approve?: string; reject?: string }) => {
+    const home = process.env.MEMEX_HOME || join(homedir(), ".memex");
+    const action = opts.approve ? "approve" : opts.reject ? "reject" : "list";
+    const proposalId = opts.approve || opts.reject;
+
+    const result = await reviewCommand({
+      memexHome: home,
+      action,
+      proposalId,
+      status: (opts.status as "pending" | "approved" | "rejected" | "applied" | undefined),
+    });
+
+    const stream = result.success ? process.stdout : process.stderr;
+    stream.write(result.output + "\n");
+    if (!result.success) process.exit(1);
+  });
+
+program
+  .command("maintain")
+  .description("Generate bounded maintenance proposals (duplicate/split/MOC suggestions)")
+  .option("--dry-run", "Preview proposals without writing")
+  .option("--max-body-lines <n>", "Split-suggestion threshold", "220")
+  .action(async (opts: { dryRun?: boolean; maxBodyLines: string }) => {
+    const home = process.env.MEMEX_HOME || join(homedir(), ".memex");
+    const store = await getStore();
+    const result = await maintainCommand(store, {
+      memexHome: home,
+      dryRun: opts.dryRun,
+      maxBodyLines: parseInt(opts.maxBodyLines, 10),
+    });
+
+    const stream = result.success ? process.stdout : process.stderr;
+    stream.write(result.output + "\n");
+    if (!result.success) process.exit(1);
   });
 
 program.parse();

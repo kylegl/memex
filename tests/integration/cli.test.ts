@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { exec as execCb } from "node:child_process";
-import { mkdtemp, rm, mkdir, writeFile, readFile, access } from "node:fs/promises";
+import { mkdtemp, rm, mkdir, writeFile, readFile, access, readdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -232,5 +232,44 @@ Nested content.`;
     const { stdout: filtered } = await run(`node ${CLI_PATH} organize --since 2099-01-01`, { env });
     expect(filtered).not.toContain("## Recently Modified Cards + Neighbors (check for contradictions)");
     expect(filtered).toContain("## Index Rebuild");
+  });
+
+  it("classify fails clearly when proposal agent is unavailable", async () => {
+    await writeFile(
+      join(tmpDir, "cards", "alpha.md"),
+      "---\ntitle: Alpha\ncreated: 2026-03-18\nsource: manual\n---\nBody"
+    );
+
+    const envWithoutPi = { ...env, MEMEX_PI_BIN: join(tmpDir, "missing-pi") };
+
+    try {
+      await run(`node ${CLI_PATH} classify`, { env: envWithoutPi });
+      expect.fail("expected classify to fail");
+    } catch (e: any) {
+      expect(e.stderr).toContain("MEMEX_AGENT_UNAVAILABLE");
+    }
+  });
+
+  it("classify uses the configured Pi runtime and writes portable proposal state", async () => {
+    await writeFile(
+      join(tmpDir, "cards", "alpha.md"),
+      "---\ntitle: Alpha\ncreated: 2026-03-18\nsource: manual\n---\nBody"
+    );
+
+    const fakePi = join(tmpDir, "fake-pi.sh");
+    await writeFile(
+      fakePi,
+      "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then\n  echo fake-pi-1.0\n  exit 0\nfi\nprintf '%s\n' '{\"proposals\":[{\"kind\":\"classify\",\"confidence\":0.97,\"rationale\":\"cli runtime\",\"evidence\":[\"cli\"],\"payload\":{\"type\":\"notes\"},\"autoSafe\":true}]}'\n",
+      { mode: 0o755 },
+    );
+
+    const envWithPi = { ...env, MEMEX_PI_BIN: fakePi };
+    const { stdout } = await run(`node ${CLI_PATH} classify --explain`, { env: envWithPi });
+    expect(stdout).toContain("cli runtime");
+
+    const proposalsDir = join(tmpDir, ".memex", "proposals");
+    const files = await readdir(proposalsDir);
+    const proposalJson = await readFile(join(proposalsDir, files[0]), "utf-8");
+    expect(proposalJson).toContain('"targetPath":"cards/alpha.md"');
   });
 });

@@ -1,8 +1,8 @@
 ---
 plan_id: agentify-memex
 title: add review and maintain commands with rollout gates
-status: idle
-updated: 2026-04-09T00:00:00Z
+status: completed
+updated: 2026-04-09T20:34:00Z
 ---
 
 Expose proposal lifecycle control and slower maintenance analysis only after the core automation path is stable.
@@ -26,3 +26,9 @@ Expose proposal lifecycle control and slower maintenance analysis only after the
 - [ ] Any added MCP surface remains a thin wrapper around the same command modules.
 - [ ] The classify, review, and organize flow works end to end in tests.
 - [ ] The full test suite passes at the end of the stage.
+
+## Skill alignment
+- Use `quality-engineer` to gate rollout criteria and end-to-end assertions.
+- Use `memex-organize` to verify review outcomes flow cleanly into deterministic organize behavior.
+- Use `agent-prompts-warmup` if command/docs changes require synchronized agent instruction updates.
+- Use `memex-retro` for any enduring operational lessons from rollout gates.

@@ -37,19 +37,22 @@ async function teardown() {
 describe("MCP server", () => {
   afterEach(teardown);
 
-  it("lists all 10 tools", async () => {
+  it("lists all 13 tools", async () => {
     await setup();
     const { tools } = await client.listTools();
     const names = tools.map((t) => t.name).sort();
     expect(names).toEqual([
       "memex_archive",
+      "memex_classify",
       "memex_links",
+      "memex_maintain",
       "memex_organize",
       "memex_pull",
       "memex_push",
       "memex_read",
       "memex_recall",
       "memex_retro",
+      "memex_review",
       "memex_search",
       "memex_write",
     ]);

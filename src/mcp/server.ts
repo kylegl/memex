@@ -10,6 +10,9 @@ import { readConfig } from "../core/config.js";
 import { HookRegistry } from "../core/hooks.js";
 import { autoFetch, autoSync } from "../core/sync.js";
 import { registerOperations } from "./operations.js";
+import { classifyCommand, classifySlugsForEvent, isAutoClassifyEnabled } from "../commands/classify.js";
+import { reviewCommand } from "../commands/review.js";
+import { maintainCommand } from "../commands/maintain.js";
 import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -79,7 +82,19 @@ export function createMemexServer(store: CardStore, home?: string): McpServer {
     if (!data.source) data.source = clientName;
     if (category && !data.category) data.category = category;
     const enrichedContent = stringifyFrontmatter(body, data);
-    const result = await writeCommand(store, slug, enrichedContent);
+    let result: Awaited<ReturnType<typeof writeCommand>>;
+    try {
+      result = await writeCommand(store, slug, enrichedContent, {
+        afterWrite: async ({ slug: writtenSlug }) => {
+          if (!home || !isAutoClassifyEnabled()) return;
+          const classify = await classifySlugsForEvent(store, home, [writtenSlug], "post-write");
+          if (!classify.success) throw new Error(classify.output);
+        },
+      });
+    } catch (error) {
+      return { content: [{ type: "text" as const, text: (error as Error).message }], isError: true };
+    }
+
     if (!result.success) {
       return { content: [{ type: "text" as const, text: result.error! }], isError: true };
     }
@@ -107,6 +122,72 @@ export function createMemexServer(store: CardStore, home?: string): McpServer {
       return { content: [{ type: "text" as const, text: result.error! }], isError: true };
     }
     return { content: [{ type: "text" as const, text: `Card '${slug}' archived.` }] };
+  });
+
+  server.registerTool("memex_classify", {
+    description: "Generate bounded organization proposals for one/all/recent cards.",
+    inputSchema: z.object({
+      slug: z.string().optional().describe("Optional card slug to classify"),
+      since: z.string().optional().describe("Classify recent cards modified since date (YYYY-MM-DD)"),
+      dryRun: z.boolean().optional().describe("Preview proposals without writing files"),
+      applySafe: z.boolean().optional().describe("Auto-apply safe classify proposals"),
+      explain: z.boolean().optional().describe("Include rationale in output"),
+    }),
+  }, async ({ slug, since, dryRun, applySafe, explain }) => {
+    if (!home) {
+      return { content: [{ type: "text" as const, text: "MEMEX_AGENT_UNAVAILABLE: memex home is required for classify" }], isError: true };
+    }
+
+    const result = await classifyCommand(store, {
+      memexHome: home,
+      slug,
+      since,
+      dryRun,
+      applySafe,
+      explain,
+    });
+
+    return {
+      content: [{ type: "text" as const, text: result.output }],
+      isError: !result.success,
+    };
+  });
+
+  server.registerTool("memex_review", {
+    description: "List and transition organization proposals (approve/reject).",
+    inputSchema: z.object({
+      action: z.enum(["list", "approve", "reject"]).optional(),
+      proposalId: z.string().optional(),
+      status: z.enum(["pending", "approved", "rejected", "applied"]).optional(),
+    }),
+  }, async ({ action, proposalId, status }) => {
+    if (!home) {
+      return { content: [{ type: "text" as const, text: "memex home is required for review" }], isError: true };
+    }
+
+    const result = await reviewCommand({ memexHome: home, action, proposalId, status });
+    return {
+      content: [{ type: "text" as const, text: result.output }],
+      isError: !result.success,
+    };
+  });
+
+  server.registerTool("memex_maintain", {
+    description: "Generate bounded maintenance proposals (split/MOC suggestion candidates).",
+    inputSchema: z.object({
+      dryRun: z.boolean().optional(),
+      maxBodyLines: z.number().optional(),
+    }),
+  }, async ({ dryRun, maxBodyLines }) => {
+    if (!home) {
+      return { content: [{ type: "text" as const, text: "memex home is required for maintain" }], isError: true };
+    }
+
+    const result = await maintainCommand(store, { memexHome: home, dryRun, maxBodyLines });
+    return {
+      content: [{ type: "text" as const, text: result.output }],
+      isError: !result.success,
+    };
   });
 
   if (home) {

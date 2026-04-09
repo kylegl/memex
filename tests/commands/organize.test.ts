@@ -287,6 +287,24 @@ describe("organize command", () => {
     expect(result.output).toContain("- mixed-mode artifacts: 0");
   });
 
+  it("flat mode groups by organization metadata before category fallback", async () => {
+    await writeCard(
+      "typed-project.md",
+      card(
+        "title: Typed Project\ncreated: 2026-03-01\nmodified: 2026-03-01\nsource: test\ncategory: misc\ntype: project",
+        "Project body.",
+      ),
+    );
+
+    const result = await organizeCommand(store, null, { memexHome: tmpDir });
+    const rootIndex = await readFile(join(cardsDir, "index.md"), "utf-8");
+
+    expect(rootIndex).toContain("## project");
+    expect(rootIndex).toContain("[[typed-project]]");
+    expect(rootIndex).not.toContain("## misc\n- [[typed-project]]");
+    expect(result.output).toContain("- mode: flat");
+  });
+
   it("skips non-generated nested index collisions and reports them", async () => {
     store = new CardStore(cardsDir, archiveDir, true);
 

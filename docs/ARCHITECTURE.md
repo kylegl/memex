@@ -22,16 +22,17 @@
                    │
 ┌──────────────────▼──────────────────────────┐
 │           MCP Server (src/mcp/)             │
-│  10 tools: recall, retro, organize,         │
+│  13 tools: recall, retro, organize,         │
 │  search, read, write, links, archive,       │
-│  pull, push                                 │
+│  classify, review, maintain, pull, push     │
 └──────────────────┬──────────────────────────┘
                    │
 ┌──────────────────▼──────────────────────────┐
 │           Command Layer (src/commands/)      │
 │  search, read, write, links, backlinks,     │
-│  archive, organize, serve, sync, import,    │
-│  doctor, migrate                            │
+│  archive, organize, classify, review,       │
+│  maintain, serve, sync, import, doctor,     │
+│  migrate                                    │
 └──────────────────┬──────────────────────────┘
                    │
 ┌──────────────────▼──────────────────────────┐
@@ -61,20 +62,24 @@ src/
 │   ├── links.ts              # Link graph stats (single card or global)
 │   ├── backlinks.ts          # Find cards linking TO a slug
 │   ├── archive.ts            # Move card to archive/
-│   ├── organize.ts           # Network analysis + generated navigation-index rebuild
+│   ├── organize.ts           # Network analysis + proposal reconciliation + index rebuild
 │   ├── rebuild-index.ts      # Deterministic root/nested navigation index builder
+│   ├── classify.ts           # AI proposal capture (one/all/recent + dry-run/explain)
+│   ├── review.ts             # Proposal lifecycle transitions (list/approve/reject)
+│   ├── maintain.ts           # Bounded maintain suggestions (split/MOC candidates)
 │   ├── serve.ts              # Web UI server (serve-ui.html)
 │   ├── sync.ts               # CLI sync orchestrator (init, pull, push, auto toggle)
 │   ├── import.ts             # Import dispatcher
 │   ├── doctor.ts             # Health checks (slug collision detection)
 │   └── migrate.ts            # Config migration (enable nestedSlugs)
-├── lib/
+├── core/
 │   ├── store.ts              # CardStore: scan, resolve, read, write, archive (atomic writes)
 │   ├── parser.ts             # Frontmatter parse/stringify, wikilink extraction
 │   ├── formatter.ts          # Output formatters (card list, search result, link stats)
 │   ├── hooks.ts              # HookRegistry: pre/post lifecycle hooks
 │   ├── sync.ts               # GitAdapter, SyncConfig, autoSync/autoFetch
 │   ├── config.ts             # .memexrc reader
+│   ├── organization.ts       # Proposal/rule persistence + routing precedence + agent config
 │   ├── embeddings.ts         # OpenAI/Local/Ollama providers, cache, cosine similarity
 │   └── utils.ts              # semverSort utility
 ├── importers/
@@ -142,10 +147,12 @@ need server-side revocation via [[blacklist-pattern]].
 ├── .sync.json          # Sync config (remote, auto, lastSync)
 ├── .memexrc            # User config (JSON)
 ├── .memex/embeddings/  # Embedding cache (per-model JSON)
+├── .memex/proposals/   # Git-tracked organization proposals (.json)
+├── .memex/organization-rules.json  # Accepted routing rules
 └── .git/               # Git repo (if sync initialized)
 ```
 
-## 5. MCP Tools (10 total)
+## 5. MCP Tools (13 total)
 
 ### High-Level (with hooks)
 
@@ -166,6 +173,9 @@ need server-side revocation via [[blacklist-pattern]].
 | `memex_write` | Write/update card with full content |
 | `memex_links` | Link stats (per-card or global) |
 | `memex_archive` | Move card to archive |
+| `memex_classify` | Generate bounded organization proposals |
+| `memex_review` | List/approve/reject organization proposals |
+| `memex_maintain` | Emit bounded maintenance proposals |
 
 ## 6. Hook System
 
@@ -322,6 +332,9 @@ npm run test:watch    # vitest watch mode
 | `ollamaModel` | string | `nomic-embed-text` | |
 | `ollamaBaseUrl` | string | `http://localhost:11434` | |
 | `localModelPath` | string | HuggingFace URI | |
+| `memexProposalAgentName` | string | `memex-proposal-agent` | AI proposal agent name |
+| `memexProposalAgentModel` | string | `openai-codex/gpt-3-codex` | AI proposal model |
+| `memexProposalAgentThinking` | `low\|medium\|high` | `medium` | AI proposal reasoning effort |
 
 ### Environment Variables
 
@@ -333,6 +346,10 @@ npm run test:watch    # vitest watch mode
 | `MEMEX_EMBEDDING_PROVIDER` | Force provider type |
 | `MEMEX_OLLAMA_MODEL` | Ollama model override |
 | `MEMEX_OLLAMA_BASE_URL` | Ollama endpoint override |
+| `MEMEX_PROPOSAL_AGENT_NAME` | Override proposal agent name |
+| `MEMEX_PROPOSAL_AGENT_MODEL` | Override proposal model |
+| `MEMEX_PROPOSAL_AGENT_THINKING` | Override proposal thinking level |
+| `MEMEX_AUTO_CLASSIFY` | Enable post-write/import/retro proposal capture hooks |
 
 ## 13. Key Implementation Details
 

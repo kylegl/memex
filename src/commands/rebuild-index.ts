@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import { basename, relative } from "node:path";
 import { stringifyFrontmatter, parseFrontmatter } from "../core/parser.js";
 import { CardStore } from "../core/store.js";
+import { OrganizationStore, resolveOrganizationFields, type OrganizationProposal, type RoutingRule } from "../core/organization.js";
 
 type SkippedIndex = { slug: string; reason: string };
 
@@ -9,8 +10,13 @@ type ScannedCardInfo = {
   slug: string;
   path: string;
   relativePath: string;
+  targetPath: string;
   title: string;
   category: string;
+  type?: string;
+  project?: string;
+  package?: string;
+  domain?: string;
   created: string;
   source: string;
   generated: string;
@@ -53,7 +59,10 @@ export type BuildIndexResult = {
 const NAV_INDEX_GENERATED = "navigation-index";
 const ORGANIZE_SOURCE = "organize";
 
-export async function buildIndexCommand(store: CardStore): Promise<BuildIndexResult> {
+export async function buildIndexCommand(
+  store: CardStore,
+  options: { memexHome?: string } = {},
+): Promise<BuildIndexResult> {
   const nested = store.isNestedSlugsEnabled();
   const scanned = await store.scanAll();
   const cardInfos = await Promise.all(scanned.map((card) => readCardInfo(store, card.slug, card.path)));
@@ -61,6 +70,14 @@ export async function buildIndexCommand(store: CardStore): Promise<BuildIndexRes
 
   for (const card of cardInfos) {
     if (!bySlug.has(card.slug)) bySlug.set(card.slug, card);
+  }
+
+  let rules: RoutingRule[] = [];
+  let proposals: OrganizationProposal[] = [];
+  if (options.memexHome) {
+    const orgStore = new OrganizationStore(options.memexHome);
+    rules = await orgStore.readRules();
+    proposals = await orgStore.listProposals();
   }
 
   const mixedModeArtifacts: string[] = [];
@@ -75,8 +92,8 @@ export async function buildIndexCommand(store: CardStore): Promise<BuildIndexRes
   }
 
   const targets = nested
-    ? buildNestedTargets(cardInfos)
-    : [buildFlatRootTarget(cardInfos)];
+    ? buildNestedTargets(cardInfos, rules, proposals)
+    : [buildFlatRootTarget(cardInfos, rules, proposals)];
 
   const created: string[] = [];
   const updated: string[] = [];
@@ -159,6 +176,7 @@ async function readCardInfo(store: CardStore, slug: string, path: string): Promi
   const category = String(data.category || "Uncategorized");
   const source = String(data.source || "");
   const generated = String(data.generated || "");
+  const relativePath = relative(store.cardsDir, path).replace(/\\/g, "/");
 
   const isGeneratedNavigationIndex = source === ORGANIZE_SOURCE && generated === NAV_INDEX_GENERATED;
   const isLegacyGeneratedRootIndex = slug === "index"
@@ -168,9 +186,14 @@ async function readCardInfo(store: CardStore, slug: string, path: string): Promi
   return {
     slug,
     path,
-    relativePath: relative(store.cardsDir, path).replace(/\\/g, "/"),
+    relativePath,
+    targetPath: `cards/${relativePath}`,
     title,
     category,
+    type: typeof data.type === "string" ? data.type : undefined,
+    project: typeof data.project === "string" ? data.project : undefined,
+    package: typeof data.package === "string" ? data.package : undefined,
+    domain: typeof data.domain === "string" ? data.domain : undefined,
     created: toDateString(data.created),
     source,
     generated,
@@ -180,7 +203,11 @@ async function readCardInfo(store: CardStore, slug: string, path: string): Promi
   };
 }
 
-function buildNestedTargets(cardInfos: ScannedCardInfo[]): RenderedIndexTarget[] {
+function buildNestedTargets(
+  cardInfos: ScannedCardInfo[],
+  rules: RoutingRule[],
+  proposals: OrganizationProposal[],
+): RenderedIndexTarget[] {
   const cardsForNavigation = cardInfos.filter((card) => !isIndexSlug(card.slug));
 
   const topFolders = new Set<string>();
@@ -239,21 +266,31 @@ function buildNestedTargets(cardInfos: ScannedCardInfo[]): RenderedIndexTarget[]
     targets.push({
       slug: `${folder}/index`,
       title: `${titleCase(lastSegment(folder))} Index`,
-      body: renderNestedFolderBody(childFolders, cards, titleBySlug, buildRelatedLinks(folder, titleBySlug)),
+      body: renderNestedFolderBody(childFolders, cards, titleBySlug, buildRelatedLinks(folder, titleBySlug, proposals)),
     });
   }
 
   return targets;
 }
 
-function buildFlatRootTarget(cardInfos: ScannedCardInfo[]): RenderedIndexTarget {
+function buildFlatRootTarget(
+  cardInfos: ScannedCardInfo[],
+  rules: RoutingRule[],
+  proposals: OrganizationProposal[],
+): RenderedIndexTarget {
   const cards = cardInfos
     .filter((card) => card.slug !== "index")
     .sort((a, b) => a.slug.localeCompare(b.slug));
 
   const categoryMap = new Map<string, string[]>();
   for (const card of cards) {
-    const category = card.category || "Uncategorized";
+    const resolution = resolveOrganizationFields(card.targetPath, {
+      type: card.type,
+      project: card.project,
+      package: card.package,
+      domain: card.domain,
+    }, rules, proposals);
+    const category = resolution.type || card.category || "Uncategorized";
     const list = categoryMap.get(category) ?? [];
     list.push(card.slug);
     categoryMap.set(category, list);
@@ -433,7 +470,11 @@ function sanitizeSegment(value: string): string {
   return value.replace(/[^a-zA-Z0-9_-]/g, "").trim();
 }
 
-function buildRelatedLinks(folder: string, titleBySlug: Map<string, string>): RelatedLinkRef[] {
+function buildRelatedLinks(
+  folder: string,
+  titleBySlug: Map<string, string>,
+  proposals: OrganizationProposal[],
+): RelatedLinkRef[] {
   const related: RelatedLinkRef[] = [];
 
   if (folder === "project/home-assistant-da/sdge") {
@@ -446,6 +487,25 @@ function buildRelatedLinks(folder: string, titleBySlug: Map<string, string>): Re
         linkSlug: "reference/patchright/index",
         label: "Patchright reference",
       });
+    }
+  }
+
+  const proposalLinks = proposals
+    .filter((proposal) => proposal.kind === "related-link")
+    .filter((proposal) => proposal.status === "approved" || (proposal.status === "pending" && proposal.autoSafe))
+    .map((proposal) => proposal.payload ?? {})
+    .filter((payload) => payload && typeof payload === "object")
+    .map((payload) => ({
+      folder: typeof payload.folder === "string" ? payload.folder : "",
+      linkSlug: typeof payload.linkSlug === "string" ? payload.linkSlug : "",
+      label: typeof payload.label === "string" ? payload.label : "Related",
+    }))
+    .filter((item) => item.folder === folder && item.linkSlug.length > 0)
+    .sort((a, b) => a.linkSlug.localeCompare(b.linkSlug));
+
+  for (const item of proposalLinks) {
+    if (!related.some((existing) => existing.linkSlug === item.linkSlug)) {
+      related.push({ linkSlug: item.linkSlug, label: item.label });
     }
   }
 

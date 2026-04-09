@@ -104,6 +104,37 @@ describe("GitAdapter", () => {
     await rm(clone, { recursive: true });
   }, 15000);
 
+  it("sync includes durable organization state", async () => {
+    const bare = await createBareRemote();
+    const adapter = new GitAdapter(home);
+    await adapter.init(bare);
+
+    await mkdir(join(home, ".memex", "proposals"), { recursive: true });
+    await writeFile(
+      join(home, ".memex", "proposals", "classify-test.json"),
+      '{"id":"classify-test","kind":"classify","targetPath":"cards/test.md","confidence":0.9,"rationale":"sync me","evidence":["test"],"status":"pending","createdAt":"2026-04-09T00:00:00.000Z","updatedAt":"2026-04-09T00:00:00.000Z","sourceEvent":"manual","idempotencyKey":"k"}\n',
+      "utf-8"
+    );
+    await writeFile(
+      join(home, ".memex", "organization-rules.json"),
+      '[{"id":"rule-1","matchPathPrefix":"cards/test","project":"test","createdAt":"2026-04-09T00:00:00.000Z","updatedAt":"2026-04-09T00:00:00.000Z"}]\n',
+      "utf-8"
+    );
+
+    const result = await adapter.sync();
+    expect(result.success).toBe(true);
+
+    const clone = await mkdtemp(join(tmpdir(), "memex-clone-"));
+    await execFile("git", ["clone", bare, clone]);
+    const proposal = await readFile(join(clone, ".memex", "proposals", "classify-test.json"), "utf-8");
+    const rules = await readFile(join(clone, ".memex", "organization-rules.json"), "utf-8");
+    expect(proposal).toContain('"targetPath":"cards/test.md"');
+    expect(rules).toContain('"matchPathPrefix":"cards/test"');
+
+    await rm(bare, { recursive: true });
+    await rm(clone, { recursive: true });
+  }, 15000);
+
   it("sync with nothing to commit succeeds", async () => {
     const bare = await createBareRemote();
     const adapter = new GitAdapter(home);

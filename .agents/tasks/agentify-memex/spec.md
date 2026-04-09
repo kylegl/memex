@@ -102,9 +102,55 @@ Need explainability/auditability for why classification happened.
 
 ## AI execution requirements
 - Memex should invoke a **Pi agent** for classification/reasoning work, not an implicit internal heuristic-only path.
-- The agent name and model must be explicitly configured.
+- Runtime defaults for this task:
+  - agent name: `memex-proposal-agent`
+  - model: `openai-codex/gpt-3-codex`
+  - thinking: `medium`
+- The agent name and model must remain explicitly configurable.
 - If Memex cannot access the configured Pi agent or no model is configured/available, the command or hook path should error clearly rather than silently pretending AI classification succeeded.
 - Deterministic organize/index behavior may continue without AI only where explicitly intended, but AI-backed classify/proposal flows must fail loudly when unavailable.
+
+### Config schema + env mapping (v1)
+Runtime AI settings should be accepted from `.memexrc` with env overrides:
+
+- `.memexrc` keys:
+  - `memexProposalAgentName` (string, default `memex-proposal-agent`)
+  - `memexProposalAgentModel` (string, default `openai-codex/gpt-3-codex`)
+  - `memexProposalAgentThinking` (`low` | `medium` | `high`, default `medium`)
+- env overrides:
+  - `MEMEX_PROPOSAL_AGENT_NAME`
+  - `MEMEX_PROPOSAL_AGENT_MODEL`
+  - `MEMEX_PROPOSAL_AGENT_THINKING`
+
+Resolver precedence:
+1. env override
+2. `.memexrc` value
+3. task default
+
+Validation/error contract for AI-backed classify/proposal paths:
+- missing or empty agent name -> `MEMEX_AGENT_CONFIG_MISSING`
+- missing or empty model -> `MEMEX_MODEL_CONFIG_MISSING`
+- invalid thinking value -> `MEMEX_AGENT_THINKING_INVALID`
+- configured runtime agent unavailable/unresolvable -> `MEMEX_AGENT_UNAVAILABLE`
+
+### Runtime agent prompt (baseline)
+Use this prompt contract for `memex-proposal-agent`:
+
+> You are Memex Proposal Agent. Your only job is to generate bounded organization proposals for Memex. Markdown cards remain canonical; you never mutate files directly.
+>
+> Return structured JSON proposals only. Do not return freeform prose.
+>
+> Allowed proposal kinds: classify, route, related-link, moc-suggestion, split-suggestion.
+>
+> Never perform direct mutations: no file moves, no title rewrites, no body rewrites, no archive/delete actions.
+>
+> Evidence precedence when reasoning: (1) explicit path, (2) explicit frontmatter, (3) accepted routing rules, (4) approved/safe proposal history, (5) fallback heuristics.
+>
+> Every proposal must include: target path, kind, confidence (0..1), rationale, and evidence bullets.
+>
+> If context is insufficient or ambiguous, return fewer proposals with lower confidence and explain uncertainty.
+>
+> If required context is missing, return a structured error object instead of inventing output.
 
 ## CLI/MCP expectations
 - CLI should expose classify/review/maintain commands.
@@ -120,12 +166,20 @@ Implement in phases:
 
 ## Constraints
 - Keep wrappers thin; core logic belongs in `src/commands/*`.
-- Keep data access in `src/lib/*`.
+- Keep data access in `src/core/*`.
 - No heavy dependencies.
 - Maintain deterministic no-op behavior where possible.
 - Prefer bounded, explainable automation over unconstrained AI mutation.
 - Pi-agent/model access checks must be explicit and testable.
 - Git-tracked proposal/rule storage must be stable and deterministic to avoid noisy churn.
+
+## Skill alignment (for agent execution)
+Use available skills intentionally while implementing this task:
+- `memex-recall` at task start to load prior context.
+- `quality-engineer` when writing plans, defining success criteria, and expanding tests.
+- `memex-organize` when validating organize/index behavior and operator workflow.
+- `agent-prompts-warmup` when changing AGENTS/docs/agent instruction mirrors.
+- `memex-retro` at task end if any non-obvious insights were learned.
 
 ## Deliverable for this task
 Create a concrete implementation plan in `.agents/tasks/agentify-memex/plan.md` covering staged rollout, files to change, risks, validation, and sequencing. Then review that plan for completeness and risks.
