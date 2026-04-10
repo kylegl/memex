@@ -208,7 +208,7 @@ function buildNestedTargets(
   rules: RoutingRule[],
   proposals: OrganizationProposal[],
 ): RenderedIndexTarget[] {
-  const cardsForNavigation = cardInfos.filter((card) => !isIndexSlug(card.slug));
+  const cardsForNavigation = cardInfos.filter((card) => !isIndexSlug(card.slug) && !isRedirectCard(card));
 
   const topFolders = new Set<string>();
   const rootCards: CardLinkRef[] = [];
@@ -223,7 +223,7 @@ function buildNestedTargets(
   for (const card of cardsForNavigation) {
     const pathSegments = card.slug.includes("/")
       ? card.slug.split("/").filter(Boolean).slice(0, -1)
-      : inferVirtualFolderSegments(card.slug);
+      : inferVirtualFolderSegments(card, rules, proposals);
 
     if (!pathSegments || pathSegments.length === 0) {
       rootCards.push({ linkSlug: card.slug, sortKey: card.slug });
@@ -279,7 +279,7 @@ function buildFlatRootTarget(
   proposals: OrganizationProposal[],
 ): RenderedIndexTarget {
   const cards = cardInfos
-    .filter((card) => card.slug !== "index")
+    .filter((card) => card.slug !== "index" && !isRedirectCard(card))
     .sort((a, b) => a.slug.localeCompare(b.slug));
 
   const categoryMap = new Map<string, string[]>();
@@ -406,8 +406,50 @@ function sortCardRefs(cards: CardLinkRef[]): CardLinkRef[] {
     });
 }
 
-function inferVirtualFolderSegments(slug: string): string[] | null {
+function inferVirtualFolderSegments(
+  card: Pick<ScannedCardInfo, "slug" | "targetPath" | "type" | "project" | "package" | "domain">,
+  rules: RoutingRule[],
+  proposals: OrganizationProposal[],
+): string[] | null {
+  const slug = card.slug;
   if (slug.includes("/")) return null;
+
+  const resolved = resolveOrganizationFields(card.targetPath, {
+    type: card.type,
+    project: card.project,
+    package: card.package,
+    domain: card.domain,
+  }, rules, proposals);
+
+  const resolvedType = sanitizeSegment(resolved.type ?? "");
+  const resolvedProject = sanitizeSegment(resolved.project ?? "");
+  const resolvedPackage = sanitizeSegment(resolved.package ?? "");
+  const resolvedDomain = sanitizeSegment(resolved.domain ?? "");
+
+  if (resolvedType === "core") {
+    if (resolvedDomain) return ["core", resolvedDomain];
+    return ["core"];
+  }
+
+  if (resolvedType === "notes") {
+    if (resolvedDomain) return ["notes", resolvedDomain];
+    return ["notes"];
+  }
+
+  if (resolvedType === "project") {
+    if (resolvedProject) return ["project", resolvedProject];
+    if (resolvedPackage) return ["project", resolvedPackage];
+    return ["project"];
+  }
+
+  if (resolvedType === "reference") {
+    if (resolvedPackage) return ["reference", resolvedPackage];
+    return ["reference"];
+  }
+
+  if (resolvedType === "memex" || resolvedType === "pi" || resolvedType === "dawarich") {
+    return [resolvedType];
+  }
 
   if (slug.startsWith("home-assistant-da-")) {
     return ["project", "home-assistant-da"];
@@ -436,26 +478,28 @@ function inferVirtualFolderSegments(slug: string): string[] | null {
   if (!first) return null;
 
   // Prefer stable, compact top-level navigation.
-  // Major domains get first-class roots; everything else stays as root cards.
-  if (first === "core" && parts.length >= 3) {
+  // Major domains get first-class roots; other flat slugs are grouped under notes/<prefix>.
+  if (first === "core" && parts.length >= 2) {
     const second = sanitizeSegment(parts[1]);
     if (second) return ["core", second];
     return ["core"];
   }
 
-  if (first === "notes" && parts.length >= 3) {
+  if (first === "notes" && parts.length >= 2) {
     const second = sanitizeSegment(parts[1]);
     if (second) return ["notes", second];
     return ["notes"];
   }
 
-  if (first === "project" && parts.length >= 3) {
+  if (first === "project" && parts.length >= 2) {
     const second = sanitizeSegment(parts[1]);
     if (second) return ["project", second];
     return ["project"];
   }
 
   if (first === "reference" && parts.length >= 2) {
+    const second = sanitizeSegment(parts[1]);
+    if (second) return ["reference", second];
     return ["reference"];
   }
 
@@ -463,7 +507,7 @@ function inferVirtualFolderSegments(slug: string): string[] | null {
     return [first];
   }
 
-  return null;
+  return ["notes", first];
 }
 
 function sanitizeSegment(value: string): string {
@@ -514,6 +558,10 @@ function buildRelatedLinks(
 
 function isIndexSlug(slug: string): boolean {
   return slug === "index" || slug.endsWith("/index");
+}
+
+function isRedirectCard(card: Pick<ScannedCardInfo, "type">): boolean {
+  return typeof card.type === "string" && card.type.trim().toLowerCase() === "redirect";
 }
 
 function areManagedIndexContentsEqual(

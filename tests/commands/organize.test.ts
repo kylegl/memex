@@ -21,6 +21,24 @@ describe("organize command", () => {
     await writeFile(path, content);
   }
 
+  async function writeProposal(id: string, proposal: Record<string, unknown>): Promise<void> {
+    const proposalsDir = join(tmpDir, ".memex", "proposals");
+    await mkdir(proposalsDir, { recursive: true });
+    await writeFile(join(proposalsDir, `${id}.json`), `${JSON.stringify(proposal)}\n`, "utf-8");
+  }
+
+  async function readProposalStatus(id: string): Promise<string> {
+    const proposalPath = join(tmpDir, ".memex", "proposals", `${id}.json`);
+    const proposal = JSON.parse(await readFile(proposalPath, "utf-8")) as { status?: string };
+    return String(proposal.status || "");
+  }
+
+  async function readRules(): Promise<Array<Record<string, unknown>>> {
+    const rulesPath = join(tmpDir, ".memex", "organization-rules.json");
+    const raw = await readFile(rulesPath, "utf-8");
+    return JSON.parse(raw) as Array<Record<string, unknown>>;
+  }
+
   beforeEach(async () => {
     tmpDir = await mkdtemp(join(tmpdir(), "memex-organize-test-"));
     cardsDir = join(tmpDir, "cards");
@@ -214,6 +232,10 @@ describe("organize command", () => {
       "green-button-is-nearline-not-realtime.md",
       card("title: Green Button is nearline\ncreated: 2026-03-01\nmodified: 2026-03-01\nsource: test", "gb body"),
     );
+    await writeCard(
+      "acceptdownloads-true-routes-files-to-playwright-artifacts.md",
+      card("title: acceptDownloads reroutes file targets\ncreated: 2026-03-01\nmodified: 2026-03-01\nsource: test", "root-ish body"),
+    );
 
     await organizeCommand(store, null);
 
@@ -221,7 +243,9 @@ describe("organize command", () => {
     expect(rootIndex).toContain("[[core/index]]");
     expect(rootIndex).toContain("[[memex/index]]");
     expect(rootIndex).toContain("[[project/index]]");
+    expect(rootIndex).toContain("[[notes/index]]");
     expect(rootIndex).not.toContain("[[core-project-intent]]");
+    expect(rootIndex).not.toContain("[[acceptdownloads-true-routes-files-to-playwright-artifacts]]");
 
     const coreIndex = await store.readCard("core/index");
     expect(coreIndex).toContain("[[core/project/index]]");
@@ -248,6 +272,12 @@ describe("organize command", () => {
 
     const patchrightIndex = await store.readCard("reference/patchright/index");
     expect(patchrightIndex).toContain("[[sdge-fetch-patchwright-entrypoint-shim]]");
+
+    const notesIndex = await store.readCard("notes/index");
+    expect(notesIndex).toContain("[[notes/acceptdownloads/index]]");
+
+    const notesAcceptdownloadsIndex = await store.readCard("notes/acceptdownloads/index");
+    expect(notesAcceptdownloadsIndex).toContain("[[acceptdownloads-true-routes-files-to-playwright-artifacts]]");
   });
 
   it("builds flat grouped root index only", async () => {
@@ -401,5 +431,190 @@ describe("organize command", () => {
     const result = await organizeCommand(store, null);
     expect(result.output).not.toContain("notes/index (10 inbound)");
     expect(result.output).not.toContain("linker-0 ↔ notes/index");
+  });
+
+  it("excludes redirect stubs from generated indexes and noise sections", async () => {
+    await writeCard(
+      "new-location.md",
+      card("title: New Location\ncreated: 2026-03-01\nmodified: 2026-03-25\nsource: test", "Fresh card body."),
+    );
+    await writeCard(
+      "legacy-stub.md",
+      card(
+        "title: Legacy Stub\ncreated: 2026-03-01\nmodified: 2026-03-25\nsource: test\ntype: redirect",
+        "Relocated to [[new-location]].",
+      ),
+    );
+
+    for (let i = 0; i < 10; i++) {
+      await writeCard(
+        `redirect-linker-${i}.md`,
+        card(
+          `title: Redirect Linker ${i}\ncreated: 2026-03-01\nmodified: 2026-03-25\nsource: test`,
+          "See [[legacy-stub]].",
+        ),
+      );
+    }
+
+    const result = await organizeCommand(store, null);
+    const rootIndex = await readFile(join(cardsDir, "index.md"), "utf-8");
+
+    expect(rootIndex).toContain("[[new-location]]");
+    expect(rootIndex).not.toContain("[[legacy-stub]]");
+    expect(result.output).not.toContain("legacy-stub (10 inbound)");
+    expect(result.output).not.toContain("redirect-linker-0 ↔ legacy-stub");
+  });
+
+  it("keeps already-satisfied redirect proposals pending instead of marking applied", async () => {
+    await writeCard(
+      "legacy-stub.md",
+      card(
+        "title: Legacy Stub\ncreated: 2026-03-01\nmodified: 2026-03-25\nsource: test\ntype: redirect",
+        "Relocated to [[project/new-home]].",
+      ),
+    );
+
+    await writeProposal("classify-redirect", {
+      id: "classify-redirect",
+      kind: "classify",
+      targetPath: "cards/legacy-stub.md",
+      confidence: 0.95,
+      rationale: "mark relocation stub as redirect",
+      evidence: ["stub body"],
+      status: "approved",
+      createdAt: "2026-04-09T00:00:00.000Z",
+      updatedAt: "2026-04-09T00:00:00.000Z",
+      sourceEvent: "classify:all",
+      idempotencyKey: "redirect-idempotency",
+      payload: { type: "redirect" },
+    });
+
+    const result = await organizeCommand(store, null, { memexHome: tmpDir });
+    const proposalRaw = await readFile(join(tmpDir, ".memex", "proposals", "classify-redirect.json"), "utf-8");
+    const proposal = JSON.parse(proposalRaw) as { status: string };
+
+    expect(proposal.status).toBe("approved");
+    expect(result.output).toContain("## Proposal Reconciliation");
+    expect(result.output).toContain("- applied: 0");
+    expect(result.output).toContain("- pending: 1");
+  });
+
+  it("applies redirect proposals when type mutation is needed", async () => {
+    await writeCard(
+      "legacy-stub.md",
+      card(
+        "title: Legacy Stub\ncreated: 2026-03-01\nmodified: 2026-03-25\nsource: test",
+        "Relocated to [[project/new-home]].",
+      ),
+    );
+
+    await writeProposal("classify-redirect", {
+      id: "classify-redirect",
+      kind: "classify",
+      targetPath: "cards/legacy-stub.md",
+      confidence: 0.95,
+      rationale: "mark relocation stub as redirect",
+      evidence: ["stub body"],
+      status: "approved",
+      createdAt: "2026-04-09T00:00:00.000Z",
+      updatedAt: "2026-04-09T00:00:00.000Z",
+      sourceEvent: "classify:all",
+      idempotencyKey: "redirect-idempotency",
+      payload: { type: "redirect" },
+    });
+
+    const result = await organizeCommand(store, null, { memexHome: tmpDir });
+    const updatedCard = await store.readCard("legacy-stub");
+    const rootIndex = await readFile(join(cardsDir, "index.md"), "utf-8");
+    const proposalRaw = await readFile(join(tmpDir, ".memex", "proposals", "classify-redirect.json"), "utf-8");
+    const proposal = JSON.parse(proposalRaw) as { status: string };
+
+    expect(updatedCard).toContain("type: redirect");
+    expect(rootIndex).not.toContain("[[legacy-stub]]");
+    expect(proposal.status).toBe("applied");
+    expect(result.output).toContain("- applied: 1");
+    expect(result.output).toContain("- pending: 0");
+  });
+
+  it("keeps route proposals unapplied when no route mutation is possible", async () => {
+    await writeCard(
+      "project/alpha.md",
+      card(
+        "title: Alpha\ncreated: 2026-03-01\nmodified: 2026-03-01\nsource: test",
+        "Alpha body",
+      ),
+    );
+
+    await writeProposal("route-noop", {
+      id: "route-noop",
+      kind: "route",
+      targetPath: "cards/project/alpha.md",
+      confidence: 0.99,
+      rationale: "route suggestion",
+      evidence: ["path"],
+      status: "approved",
+      createdAt: "2026-04-09T00:00:00.000Z",
+      updatedAt: "2026-04-09T00:00:00.000Z",
+      sourceEvent: "manual",
+      idempotencyKey: "route-noop-key",
+      autoSafe: true,
+      payload: {
+        type: "project",
+      },
+    });
+
+    const result = await organizeCommand(store, null, { memexHome: tmpDir });
+
+    expect(result.output).toContain("## Proposal Reconciliation");
+    expect(result.output).toContain("- applied: 0");
+    expect(result.output).toContain("- pending: 1");
+    expect(await readProposalStatus("route-noop")).toBe("approved");
+  });
+
+  it("marks route proposals applied only when they mutate routing rules", async () => {
+    await writeCard(
+      "project/runtime.md",
+      card(
+        "title: Runtime\ncreated: 2026-03-01\nmodified: 2026-03-01\nsource: test",
+        "Runtime body",
+      ),
+    );
+
+    await writeProposal("route-rule", {
+      id: "route-rule",
+      kind: "route",
+      targetPath: "cards/project/runtime.md",
+      confidence: 0.99,
+      rationale: "route suggestion",
+      evidence: ["path"],
+      status: "approved",
+      createdAt: "2026-04-09T00:00:00.000Z",
+      updatedAt: "2026-04-09T00:00:00.000Z",
+      sourceEvent: "manual",
+      idempotencyKey: "route-rule-key",
+      autoSafe: true,
+      payload: {
+        ruleId: "project-runtime",
+        matchPathPrefix: "cards/project/runtime",
+        type: "project",
+        project: "runtime",
+      },
+    });
+
+    const result = await organizeCommand(store, null, { memexHome: tmpDir });
+
+    expect(result.output).toContain("## Proposal Reconciliation");
+    expect(result.output).toContain("- applied: 1");
+    expect(result.output).toContain("- pending: 0");
+    expect(await readProposalStatus("route-rule")).toBe("applied");
+
+    const rules = await readRules();
+    expect(rules).toHaveLength(1);
+    expect(rules[0]).toMatchObject({
+      id: "project-runtime",
+      matchPathPrefix: "cards/project/runtime",
+      type: "project",
+      project: "runtime",
+    });
   });
 });
