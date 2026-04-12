@@ -1,12 +1,13 @@
 {
-  "tick": 15,
-  "unit": "F8.1",
-  "description": "1 card from 100 memos (99% skip - weakest batch)",
+  "tick": 16,
+  "unit": "F8.2",
+  "description": "Curator PASS, DA PASS.",
   "status": "completed",
   "artifacts": [
-    ".harness/nodes/F8.1/run_1/eval.md"
+    ".harness/nodes/F8.2/run_1/eval-curator.md",
+    ".harness/nodes/F8.2/run_1/eval-da.md"
   ],
-  "next_unit": "F8.2",
+  "next_unit": "F9.1",
   "blockers": [],
   "review_of_previous": "",
   "plan_file": ".harness/plan.md",
@@ -37,8 +38,8 @@
   ],
   "_written_by": "opc-harness",
   "_plan_hash": "20c58620f144bc27",
-  "_last_modified": "2026-04-12T12:19:15.847Z",
-  "_git_head": "eaaa192ca05ecc4127658a4b4d30fac5b6f8cf2d",
+  "_last_modified": "2026-04-12T12:19:38.012Z",
+  "_git_head": "3d436fccb85052ba147648267727c6b10eff45fe",
   "_tick_history": [
     {
       "unit": "F1.1",
@@ -114,6 +115,11 @@
       "unit": "F8.1",
       "tick": 15,
       "status": "completed"
+    },
+    {
+      "unit": "F8.2",
+      "tick": 16,
+      "status": "completed"
     }
   ],
   "_max_total_ticks": 66,
@@ -127,7 +133,7 @@
     "typecheck_script": false
   },
   "_last_review_evals": {
-    ".harness/nodes/F7.2/run_1/eval-curator.md": "eafa2a577fc0d60f",
-    ".harness/nodes/F7.2/run_1/eval-da.md": "92298ea816b6b9f1"
+    ".harness/nodes/F8.2/run_1/eval-curator.md": "f5641cb4fa32dbaa",
+    ".harness/nodes/F8.2/run_1/eval-da.md": "15237c3d924432de"
   }
 }
