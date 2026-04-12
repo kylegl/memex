@@ -1,13 +1,12 @@
 {
-  "tick": 8,
-  "unit": "F4.2",
-  "description": "PASS. 1 card already reviewed in F3.2. Aggressive skip rate (21/22) is correct for knowledge dumps.",
-  "status": "in_progress",
+  "tick": 9,
+  "unit": "F5.1",
+  "description": "1 card from 25 memos (96% skip rate - mostly MSFT internal)",
+  "status": "completed",
   "artifacts": [
-    ".harness/nodes/F4.2/run_1/eval-curator.md",
-    ".harness/nodes/F4.2/run_1/eval-da.md"
+    ".harness/nodes/F5.1/run_1/eval.md"
   ],
-  "next_unit": "F5.1",
+  "next_unit": "F5.2",
   "blockers": [],
   "review_of_previous": "",
   "plan_file": ".harness/plan.md",
@@ -38,8 +37,8 @@
   ],
   "_written_by": "opc-harness",
   "_plan_hash": "20c58620f144bc27",
-  "_last_modified": "2026-04-12T11:49:31.645Z",
-  "_git_head": "a25831e559f9aa146ad6bd5f4456db4986f53a59",
+  "_last_modified": "2026-04-12T11:50:44.943Z",
+  "_git_head": "dc4f8a91365d6fe115afdeeff126b91150e1275d",
   "_tick_history": [
     {
       "unit": "F1.1",
@@ -79,6 +78,11 @@
     {
       "unit": "F4.2",
       "tick": 8,
+      "status": "completed"
+    },
+    {
+      "unit": "F5.1",
+      "tick": 9,
       "status": "completed"
     }
   ],
