@@ -277,4 +277,62 @@ describe("flomoPushCommand", () => {
     expect(result.output).toContain("⏭ test-card");
     expect(mockFetch).not.toHaveBeenCalled();
   });
+
+  it("handles flomo API error code (HTTP 200 but code !== 0)", async () => {
+    const mockFetch = createMockFetch(200, { code: -1, message: "Rate limit exceeded" });
+    await writeTestCard("test-card", { title: "Test", created: "2026-01-01", source: "retro" }, "Body");
+
+    const result = await flomoPushCommand(store, testDir, "test-card", { fetchFn: mockFetch });
+    expect(result.exitCode).toBe(1);
+    expect(result.output).toContain("✗ test-card");
+    expect(result.output).toContain("Rate limit exceeded");
+
+    // Card should NOT have flomoPushedAt since push failed
+    const card = await store.readCard("test-card");
+    expect(card).not.toContain("flomoPushedAt");
+  });
+
+  it("returns 0 pushed for empty batch filter result", async () => {
+    const mockFetch = createMockFetch();
+    await writeTestCard("card-a", { title: "A", created: "2026-01-01", source: "retro" }, "Body");
+
+    const result = await flomoPushCommand(store, testDir, undefined, {
+      all: true,
+      source: "nonexistent-source",
+      fetchFn: mockFetch,
+    });
+    expect(result.exitCode).toBe(0);
+    expect(result.output).toContain("No cards matched");
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+});
+
+// ── Security: webhook URL validation ─────────────────────────────────
+
+describe("webhook URL validation", () => {
+  it("rejects path traversal in webhook URL", async () => {
+    const result = await writeFlomoConfig(testDir, "https://flomoapp.com/iwh/../../api/admin");
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("Invalid flomo webhook URL");
+  });
+
+  it("rejects non-flomoapp.com host", async () => {
+    const result = await writeFlomoConfig(testDir, "https://evil.com/iwh/abc/123/");
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects HTTP (non-HTTPS)", async () => {
+    const result = await writeFlomoConfig(testDir, "http://flomoapp.com/iwh/abc/123/");
+    expect(result.success).toBe(false);
+  });
+
+  it("readFlomoConfig rejects tampered URL at read time", async () => {
+    // Directly write a bad URL to .memexrc (simulating tampering)
+    await writeFile(
+      join(testDir, ".memexrc"),
+      JSON.stringify({ flomoWebhookUrl: "https://evil.com/exfil" }),
+    );
+    const config = await readFlomoConfig(testDir);
+    expect(config.webhookUrl).toBeUndefined();
+  });
 });

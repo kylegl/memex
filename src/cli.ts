@@ -304,8 +304,7 @@ flomo
   .command("import <file>")
   .description("Import memos from flomo HTML export")
   .option("--dry-run", "Preview without writing cards")
-  .option("--raw", "Import as-is without digest (preserves original memo text)")
-  .action(async (file: string, opts: { dryRun?: boolean; raw?: boolean }) => {
+  .action(async (file: string, opts: { dryRun?: boolean }) => {
     const store = await getStore();
     const result = await flomoImportCommand(store, file, opts);
     process.stdout.write(result.output + "\n");
