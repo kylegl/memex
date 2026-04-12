@@ -1,13 +1,12 @@
 {
-  "tick": 4,
-  "unit": "F2.2",
-  "description": "2 independent reviews (curator ITERATE + DA ITERATE). Fixed 2 red + 3 yellow issues. Cards now have time anchors, softened claims, and mesh cross-links.",
+  "tick": 5,
+  "unit": "F3.1",
+  "description": "3 cards from 8 memos. Skipped biographical entries.",
   "status": "completed",
   "artifacts": [
-    ".harness/nodes/F2.2/run_1/eval-curator.md",
-    ".harness/nodes/F2.2/run_1/eval-da.md"
+    ".harness/nodes/F3.1/run_1/eval.md"
   ],
-  "next_unit": "F3.1",
+  "next_unit": "F3.2",
   "blockers": [],
   "review_of_previous": "",
   "plan_file": ".harness/plan.md",
@@ -38,8 +37,8 @@
   ],
   "_written_by": "opc-harness",
   "_plan_hash": "20c58620f144bc27",
-  "_last_modified": "2026-04-12T11:40:06.650Z",
-  "_git_head": "5bff4d77ea43678ad9a0836a5729dd6f407ad5ee",
+  "_last_modified": "2026-04-12T11:42:02.274Z",
+  "_git_head": "b7d093c0660323dbd0ad26347a0fa97dfb4386ff",
   "_tick_history": [
     {
       "unit": "F1.1",
@@ -59,6 +58,11 @@
     {
       "unit": "F2.2",
       "tick": 4,
+      "status": "completed"
+    },
+    {
+      "unit": "F3.1",
+      "tick": 5,
       "status": "completed"
     }
   ],
