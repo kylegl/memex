@@ -1,13 +1,12 @@
 {
-  "tick": 2,
-  "unit": "F1.2",
-  "description": "2 independent reviews: curator (ITERATE → fixes applied) + DA verification (PASS). All 4 yellow issues resolved.",
-  "status": "in_progress",
+  "tick": 3,
+  "unit": "F2.1",
+  "description": "Digested 20 memos into 5 atomic cards. Skipped 15 memos (industry gossip, dated predictions, personal reflections better suited for blog).",
+  "status": "completed",
   "artifacts": [
-    ".harness/nodes/F1.2/run_1/eval.md",
-    ".harness/nodes/F1.2/run_1/eval-da.md"
+    ".harness/nodes/F2.1/run_1/eval.md"
   ],
-  "next_unit": "F2.1",
+  "next_unit": "F2.2",
   "blockers": [],
   "review_of_previous": "",
   "plan_file": ".harness/plan.md",
@@ -38,8 +37,8 @@
   ],
   "_written_by": "opc-harness",
   "_plan_hash": "20c58620f144bc27",
-  "_last_modified": "2026-04-12T11:33:33.691Z",
-  "_git_head": "c339f11eb67f4396587b403a6a4775147095feee",
+  "_last_modified": "2026-04-12T11:36:05.896Z",
+  "_git_head": "2322415614bdfed0e9075c64e66b77e401b98dfa",
   "_tick_history": [
     {
       "unit": "F1.1",
@@ -49,6 +48,11 @@
     {
       "unit": "F1.2",
       "tick": 2,
+      "status": "completed"
+    },
+    {
+      "unit": "F2.1",
+      "tick": 3,
       "status": "completed"
     }
   ],
