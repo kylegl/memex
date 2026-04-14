@@ -1,0 +1,136 @@
+{
+  "generatedAt": "2026-04-09T00:00:00Z",
+  "source": "focused memex-proposal-agent analysis across notes/neuratri, core/project, and project/home-assistant-playground",
+  "batchName": "memex-apply-first-shortlist",
+  "proposalCount": 10,
+  "proposals": [
+    {
+      "id": "neuratri-route-peopleware-project-index",
+      "cluster": "notes/neuratri",
+      "kind": "route",
+      "priority": 1,
+      "confidence": 0.99,
+      "targetPath": "notes-neuratri-meetings-clients-peopleware-project-index.md",
+      "action": {
+        "from": "notes-neuratri-meetings-clients-peopleware-project-index.md",
+        "to": "notes/neuratri/meetings/clients/peopleware/project index.md"
+      },
+      "rationale": "Client hub is a flattened import with an unambiguous canonical nested path already implied by links and imported provenance."
+    },
+    {
+      "id": "neuratri-route-allstate-project-index",
+      "cluster": "notes/neuratri",
+      "kind": "route",
+      "priority": 2,
+      "confidence": 0.99,
+      "targetPath": "notes-neuratri-meetings-clients-allstate-project-index.md",
+      "action": {
+        "from": "notes-neuratri-meetings-clients-allstate-project-index.md",
+        "to": "notes/neuratri/meetings/clients/allstate/project index.md"
+      },
+      "rationale": "Client hub is a flattened import with a canonical nested path already used by related notes."
+    },
+    {
+      "id": "neuratri-route-mark-holtsbery-project-index",
+      "cluster": "notes/neuratri",
+      "kind": "route",
+      "priority": 3,
+      "confidence": 0.99,
+      "targetPath": "notes-neuratri-meetings-clients-mark-holtsbery-project-index.md",
+      "action": {
+        "from": "notes-neuratri-meetings-clients-mark-holtsbery-project-index.md",
+        "to": "notes/neuratri/meetings/clients/mark-holtsbery/project index.md"
+      },
+      "rationale": "Client hub is a flattened import with an explicit nested canonical destination."
+    },
+    {
+      "id": "neuratri-route-meetings-moc",
+      "cluster": "notes/neuratri",
+      "kind": "route",
+      "priority": 4,
+      "confidence": 0.98,
+      "targetPath": "notes-neuratri-meetings-neuratri-meetings-moc.md",
+      "action": {
+        "from": "notes-neuratri-meetings-neuratri-meetings-moc.md",
+        "to": "notes/neuratri/meetings/neuratri meetings moc.md"
+      },
+      "rationale": "Top-level Neuratri meetings hub should live at its canonical nested MOC path."
+    },
+    {
+      "id": "neuratri-route-internal-meetings-hub",
+      "cluster": "notes/neuratri",
+      "kind": "route",
+      "priority": 5,
+      "confidence": 0.98,
+      "targetPath": "notes-neuratri-meetings-neuratri-internal-meetings.md",
+      "action": {
+        "from": "notes-neuratri-meetings-neuratri-internal-meetings.md",
+        "to": "notes/neuratri/meetings/neuratri internal meetings.md"
+      },
+      "rationale": "Internal meetings hub is a flattened import whose nested path is already the cluster’s de facto canonical link target."
+    },
+    {
+      "id": "core-project-demote-pi-subagents-context-stub",
+      "cluster": "core/project",
+      "kind": "route",
+      "priority": 6,
+      "confidence": 0.99,
+      "targetPath": "core-project-pi-subagents-context-progress-frontmatter-conventions-adb420a9.md",
+      "action": {
+        "routeType": "relocation-stub-to-canonical",
+        "canonicalTarget": "core-project-pi-subagents-context-progress-frontmatter-conventions.md"
+      },
+      "rationale": "This is a relocation stub with generic title and an explicit moved-to pointer; the canonical content note already exists."
+    },
+    {
+      "id": "core-project-demote-pi-subagents-scaffold-stub",
+      "cluster": "core/project",
+      "kind": "route",
+      "priority": 7,
+      "confidence": 0.99,
+      "targetPath": "core-project-pi-subagents-task-scaffold-and-agent-task-inference.md",
+      "action": {
+        "routeType": "relocation-stub-to-canonical",
+        "canonicalTarget": "core-project-pi-subagents-task-scaffold-and-agent-task-inference-567c261e.md"
+      },
+      "rationale": "This note is only a moved-note stub; the hashed sibling contains the substantive content."
+    },
+    {
+      "id": "core-project-demote-pi-subagents-taskid-stub",
+      "cluster": "core/project",
+      "kind": "route",
+      "priority": 8,
+      "confidence": 0.99,
+      "targetPath": "core-project-pi-subagents-taskid-routing-08273c46.md",
+      "action": {
+        "routeType": "relocation-stub-to-canonical",
+        "canonicalTarget": "core-project-pi-subagents-taskid-routing.md"
+      },
+      "rationale": "This note is a relocation stub and should not be treated as primary content in project navigation."
+    },
+    {
+      "id": "neuratri-classify-meetings-moc",
+      "cluster": "notes/neuratri",
+      "kind": "classify",
+      "priority": 9,
+      "confidence": 0.99,
+      "targetPath": "notes-neuratri-meetings-neuratri-meetings-moc.md",
+      "action": {
+        "note_kind": "moc"
+      },
+      "rationale": "This is a top-level meetings hub with hub tags and outgoing branches to the internal hub and all client project indexes."
+    },
+    {
+      "id": "ha-playground-classify-architecture-baseline",
+      "cluster": "project/home-assistant-playground",
+      "kind": "classify",
+      "priority": 10,
+      "confidence": 0.97,
+      "targetPath": "project-home-assistant-playground-digital-alchemy-areas-architecture-and-behavior-model-2026-03-17.md",
+      "action": {
+        "note_kind": "architecture-baseline"
+      },
+      "rationale": "This note defines the cluster’s behavior model, source-of-truth docs, entity contract, and operating flow, making it the strongest architecture anchor in the playground set."
+    }
+  ]
+}
