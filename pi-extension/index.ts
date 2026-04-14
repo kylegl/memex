@@ -98,6 +98,11 @@ export default function memexExtension(pi: ExtensionAPI) {
   let recallDone = false;
   let retroDone = false;
 
+  const isSubagentContext = () => {
+    const depth = Number(process.env.PI_SUBAGENT_DEPTH ?? "0");
+    return Number.isFinite(depth) && depth > 0;
+  };
+
   // -----------------------------------------------------------------------
   // Resource discovery — expose bundled skills to Pi
   // -----------------------------------------------------------------------
@@ -127,6 +132,7 @@ export default function memexExtension(pi: ExtensionAPI) {
 
   // Inject recall reminder at the start of each agent turn (until recall is done)
   pi.on("before_agent_start", async (_event, _ctx) => {
+    if (isSubagentContext()) return;
     if (recallDone) return;
 
     return {
@@ -153,6 +159,7 @@ export default function memexExtension(pi: ExtensionAPI) {
   // hasn't done so yet. Uses "nextTurn" delivery so it doesn't interrupt
   // the current response — the reminder appears on the next user prompt.
   pi.on("agent_end", async (_event, _ctx) => {
+    if (isSubagentContext()) return;
     if (retroDone || !recallDone) return;
 
     pi.sendMessage(
