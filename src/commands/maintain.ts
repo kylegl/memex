@@ -1,9 +1,10 @@
-import { parseFrontmatter } from "../core/parser.js";
+import { parseFrontmatter, stringifyFrontmatter } from "../core/parser.js";
 import { CardStore } from "../core/store.js";
 import {
   buildProposalId,
   computeProposalIdempotencyKey,
   OrganizationStore,
+  proposalTargetPathToSlug,
   toProposalTargetPath,
   type OrganizationProposal,
 } from "../core/organization.js";
@@ -11,6 +12,7 @@ import {
 export interface MaintainOptions {
   memexHome: string;
   dryRun?: boolean;
+  applySafe?: boolean;
   maxBodyLines?: number;
 }
 
@@ -19,6 +21,7 @@ export interface MaintainResult {
   output: string;
   created: number;
   skipped: number;
+  applied: number;
 }
 
 export async function maintainCommand(store: CardStore, options: MaintainOptions): Promise<MaintainResult> {
@@ -27,6 +30,7 @@ export async function maintainCommand(store: CardStore, options: MaintainOptions
   const proposals: OrganizationProposal[] = [];
 
   const titleToCards = new Map<string, string[]>();
+  const redirectCandidates = new Map<string, { data: Record<string, unknown>; content: string }>();
 
   for (const card of cards) {
     const raw = await store.readCard(card.slug);
@@ -36,6 +40,19 @@ export async function maintainCommand(store: CardStore, options: MaintainOptions
     const list = titleToCards.get(title) ?? [];
     list.push(targetPath);
     titleToCards.set(title, list);
+
+    const relocation = detectLegacyRelocationStub(content);
+    if (relocation && !isRedirectType(data.type)) {
+      proposals.push(createProposal(targetPath, "classify", {
+        confidence: 0.96,
+        rationale: "Legacy relocation stub detected; classify as redirect",
+        evidence: ["legacy-relocation-stub", `hint:${relocation.hint}`],
+        payload: { type: "redirect" },
+        autoSafe: true,
+      }));
+
+      redirectCandidates.set(targetPath, { data, content });
+    }
 
     const lines = content.split("\n").length;
     const maxLines = options.maxBodyLines ?? 220;
@@ -77,18 +94,43 @@ export async function maintainCommand(store: CardStore, options: MaintainOptions
     }
   }
 
+  let applied = 0;
+  if (!options.dryRun && options.applySafe) {
+    for (const proposal of proposals) {
+      if (!isSafeRedirectClassify(proposal)) continue;
+      const slug = proposalTargetPathToSlug(proposal.targetPath);
+      if (!slug) continue;
+
+      const candidate = redirectCandidates.get(proposal.targetPath);
+      if (!candidate) continue;
+      if (isRedirectType(candidate.data.type)) continue;
+
+      candidate.data.type = "redirect";
+      const updated = stringifyFrontmatter(candidate.content, candidate.data);
+      await store.writeCard(slug, updated);
+      applied += 1;
+    }
+  }
+
   return {
     success: true,
-    output: `maintain ${options.dryRun ? "dry-run" : "apply"}: proposals=${proposals.length} created=${created} skipped=${skipped}`,
+    output: `maintain ${options.dryRun ? "dry-run" : "apply"}: proposals=${proposals.length} created=${created} skipped=${skipped} applied=${applied}`,
     created,
     skipped,
+    applied,
   };
 }
 
 function createProposal(
   targetPath: string,
-  kind: "split-suggestion" | "moc-suggestion",
-  input: { confidence: number; rationale: string; evidence: string[] },
+  kind: "classify" | "split-suggestion" | "moc-suggestion",
+  input: {
+    confidence: number;
+    rationale: string;
+    evidence: string[];
+    payload?: Record<string, unknown>;
+    autoSafe?: boolean;
+  },
 ): OrganizationProposal {
   const idempotencyKey = computeProposalIdempotencyKey(targetPath, `maintain:${kind}`, input.evidence.join("|"));
   const now = new Date().toISOString();
@@ -105,8 +147,36 @@ function createProposal(
     updatedAt: now,
     sourceEvent: "maintain",
     idempotencyKey,
+    autoSafe: input.autoSafe,
     payload: {
       maintain: true,
+      ...(input.payload ?? {}),
     },
   };
+}
+
+function detectLegacyRelocationStub(content: string): { hint: string } | null {
+  const nonEmptyLines = content
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+
+  if (nonEmptyLines.length === 0) return null;
+  if (nonEmptyLines.length > 2) return null;
+
+  const first = nonEmptyLines[0];
+  if (!/^relocated to\b/i.test(first)) return null;
+
+  return { hint: first.slice(0, 120) };
+}
+
+function isRedirectType(value: unknown): boolean {
+  return typeof value === "string" && value.trim().toLowerCase() === "redirect";
+}
+
+function isSafeRedirectClassify(proposal: OrganizationProposal): boolean {
+  if (proposal.kind !== "classify") return false;
+  if (proposal.confidence < 0.9) return false;
+  if (!proposal.autoSafe) return false;
+  return proposal.payload?.type === "redirect";
 }

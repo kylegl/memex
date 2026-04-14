@@ -2,7 +2,13 @@ import { readFile } from "node:fs/promises";
 import { CardStore } from "../core/store.js";
 import { parseFrontmatter, extractLinks, stringifyFrontmatter } from "../core/parser.js";
 import { formatLinkStats } from "../core/formatter.js";
-import { OrganizationStore, proposalTargetPathToSlug, resolveOrganizationFields } from "../core/organization.js";
+import {
+  OrganizationStore,
+  proposalTargetPathToSlug,
+  resolveOrganizationFields,
+  type OrganizationProposal,
+  type RoutingRule,
+} from "../core/organization.js";
 import { buildIndexCommand } from "./rebuild-index.js";
 
 function toDateString(val: unknown): string {
@@ -22,6 +28,7 @@ type CardInfo = {
   content: string;
   source: string;
   generated: string;
+  type: string;
   isGeneratedNavigationIndex: boolean;
 };
 
@@ -51,6 +58,7 @@ export async function organizeCommand(
     const links = extractLinks(content);
     const source = String(data.source || "");
     const generated = String(data.generated || "");
+    const type = String(data.type || "").trim().toLowerCase();
 
     outboundMap.set(card.slug, links);
     cardData.set(card.slug, {
@@ -60,6 +68,7 @@ export async function organizeCommand(
       content: content.trim(),
       source,
       generated,
+      type,
       isGeneratedNavigationIndex: source === ORGANIZE_SOURCE && generated === NAV_INDEX_GENERATED,
     });
 
@@ -72,7 +81,11 @@ export async function organizeCommand(
 
   const isExcludedFromNoise = (slug: string): boolean => {
     if (slug === "index") return true;
-    return cardData.get(slug)?.isGeneratedNavigationIndex === true;
+    const info = cardData.get(slug);
+    if (!info) return false;
+    if (info.isGeneratedNavigationIndex) return true;
+    if (info.type === "redirect") return true;
+    return false;
   };
 
   // Link stats
@@ -189,7 +202,7 @@ export async function organizeCommand(
   if (options.memexHome) {
     const orgStore = new OrganizationStore(options.memexHome);
     const proposals = await orgStore.listProposals();
-    const rules = await orgStore.readRules();
+    let rules = await orgStore.readRules();
 
     const actionable = proposals.filter((proposal) =>
       proposal.status === "approved"
@@ -197,9 +210,17 @@ export async function organizeCommand(
     );
 
     for (const proposal of actionable) {
-      if ((proposal.kind === "classify" || proposal.kind === "route") && proposal.confidence >= 0.9) {
+      if (proposal.confidence < 0.9) {
+        proposalPending += 1;
+        continue;
+      }
+
+      if (proposal.kind === "classify") {
         const slug = proposalTargetPathToSlug(proposal.targetPath);
-        if (!slug) continue;
+        if (!slug) {
+          proposalPending += 1;
+          continue;
+        }
 
         try {
           const raw = await store.readCard(slug);
@@ -226,16 +247,32 @@ export async function organizeCommand(
 
           if (mutated) {
             await store.writeCard(slug, stringifyFrontmatter(content, data));
+            await orgStore.updateProposalStatus(proposal.id, "applied");
+            proposalApplied += 1;
+          } else {
+            proposalPending += 1;
           }
-
-          await orgStore.updateProposalStatus(proposal.id, "applied");
-          proposalApplied += 1;
         } catch {
           proposalPending += 1;
         }
-      } else {
-        proposalPending += 1;
+        continue;
       }
+
+      if (proposal.kind === "route") {
+        const routeMutation = applyRouteRuleMutation(rules, proposal);
+        if (!routeMutation.mutated) {
+          proposalPending += 1;
+          continue;
+        }
+
+        rules = routeMutation.rules;
+        await orgStore.writeRules(rules);
+        await orgStore.updateProposalStatus(proposal.id, "applied");
+        proposalApplied += 1;
+        continue;
+      }
+
+      proposalPending += 1;
     }
   }
 
@@ -266,5 +303,95 @@ export async function organizeCommand(
   }
 
   return { output: sections.join("\n\n"), exitCode: 0 };
+}
+
+function applyRouteRuleMutation(
+  currentRules: RoutingRule[],
+  proposal: OrganizationProposal,
+): { mutated: boolean; rules: RoutingRule[] } {
+  const candidate = buildRouteRuleFromProposal(proposal);
+  if (!candidate) return { mutated: false, rules: currentRules };
+
+  const existingById = currentRules.find((rule) => rule.id === candidate.id);
+  if (existingById) {
+    const updated: RoutingRule = {
+      ...existingById,
+      matchPathPrefix: candidate.matchPathPrefix,
+      type: candidate.type,
+      project: candidate.project,
+      package: candidate.package,
+      domain: candidate.domain,
+      updatedAt: candidate.updatedAt,
+    };
+
+    if (sameRuleShape(existingById, updated)) {
+      return { mutated: false, rules: currentRules };
+    }
+
+    return {
+      mutated: true,
+      rules: currentRules.map((rule) => (rule.id === candidate.id ? updated : rule)),
+    };
+  }
+
+  const equivalentRule = currentRules.find((rule) => sameRuleShape(rule, candidate));
+  if (equivalentRule) {
+    return { mutated: false, rules: currentRules };
+  }
+
+  return {
+    mutated: true,
+    rules: [...currentRules, candidate],
+  };
+}
+
+function buildRouteRuleFromProposal(proposal: OrganizationProposal): RoutingRule | null {
+  const payload = proposal.payload;
+  if (!isRecord(payload)) return null;
+
+  const matchPathPrefix = asNonEmptyString(payload.matchPathPrefix);
+  if (!matchPathPrefix) return null;
+
+  const type = asNonEmptyString(payload.type);
+  const project = asNonEmptyString(payload.project);
+  const pkg = asNonEmptyString(payload.package);
+  const domain = asNonEmptyString(payload.domain);
+
+  if (!type && !project && !pkg && !domain) return null;
+
+  const now = new Date().toISOString();
+  const id = asNonEmptyString(payload.ruleId) ?? `proposal-route-${proposal.id}`;
+
+  return {
+    id,
+    matchPathPrefix,
+    type,
+    project,
+    package: pkg,
+    domain,
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
+function sameRuleShape(a: RoutingRule, b: RoutingRule): boolean {
+  return (
+    a.id === b.id
+    && a.matchPathPrefix === b.matchPathPrefix
+    && a.type === b.type
+    && a.project === b.project
+    && a.package === b.package
+    && a.domain === b.domain
+  );
+}
+
+function asNonEmptyString(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const normalized = value.trim();
+  return normalized.length > 0 ? normalized : undefined;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === "object" && !Array.isArray(value);
 }
 

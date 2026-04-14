@@ -344,15 +344,17 @@ program
 
 program
   .command("maintain")
-  .description("Generate bounded maintenance proposals (duplicate/split/MOC suggestions)")
+  .description("Generate bounded maintenance proposals (duplicate/split/MOC/redirect suggestions)")
   .option("--dry-run", "Preview proposals without writing")
+  .option("--apply-safe", "Auto-apply safe redirect classify proposals")
   .option("--max-body-lines <n>", "Split-suggestion threshold", "220")
-  .action(async (opts: { dryRun?: boolean; maxBodyLines: string }) => {
+  .action(async (opts: { dryRun?: boolean; applySafe?: boolean; maxBodyLines: string }) => {
     const home = process.env.MEMEX_HOME || join(homedir(), ".memex");
     const store = await getStore();
     const result = await maintainCommand(store, {
       memexHome: home,
       dryRun: opts.dryRun,
+      applySafe: opts.applySafe,
       maxBodyLines: parseInt(opts.maxBodyLines, 10),
     });
 

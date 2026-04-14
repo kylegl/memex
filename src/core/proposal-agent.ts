@@ -41,6 +41,8 @@ export function createPiProposalRunner(env: NodeJS.ProcessEnv = process.env): Pr
           "--no-skills",
           "--model",
           model,
+          "--thinking",
+          input.agent.thinking,
           "--append-system-prompt",
           BASELINE_PROMPT,
           prompt,
@@ -105,7 +107,7 @@ export async function ensurePiProposalRuntimeAvailable(
 }
 
 function formatModel(agent: ProposalAgentConfig): string {
-  return `${agent.model}:${agent.thinking}`;
+  return agent.model;
 }
 
 function buildPrompt(input: Parameters<ProposalRunner>[0]): string {

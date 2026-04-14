@@ -173,17 +173,18 @@ export function createMemexServer(store: CardStore, home?: string): McpServer {
   });
 
   server.registerTool("memex_maintain", {
-    description: "Generate bounded maintenance proposals (split/MOC suggestion candidates).",
+    description: "Generate bounded maintenance proposals (split/MOC/redirect suggestion candidates).",
     inputSchema: z.object({
       dryRun: z.boolean().optional(),
+      applySafe: z.boolean().optional(),
       maxBodyLines: z.number().optional(),
     }),
-  }, async ({ dryRun, maxBodyLines }) => {
+  }, async ({ dryRun, applySafe, maxBodyLines }) => {
     if (!home) {
       return { content: [{ type: "text" as const, text: "memex home is required for maintain" }], isError: true };
     }
 
-    const result = await maintainCommand(store, { memexHome: home, dryRun, maxBodyLines });
+    const result = await maintainCommand(store, { memexHome: home, dryRun, applySafe, maxBodyLines });
     return {
       content: [{ type: "text" as const, text: result.output }],
       isError: !result.success,
