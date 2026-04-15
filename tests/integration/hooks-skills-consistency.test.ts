@@ -58,4 +58,14 @@ describe("hooks ↔ skills consistency", () => {
     const command: string = hooks.hooks.SessionStart[0].hooks[0].command;
     expect(command).toContain("memex-retro");
   });
+
+  it("hooks.json uses CLAUDE_PLUGIN_ROOT instead of global memex binary", () => {
+    const command: string = hooks.hooks.SessionStart[0].hooks[0].command;
+    // Should reference the bundled CLI via CLAUDE_PLUGIN_ROOT
+    expect(command).toContain("CLAUDE_PLUGIN_ROOT");
+    expect(command).toContain("dist/cli.js");
+    // Should NOT depend on a globally installed memex binary
+    expect(command).not.toContain("command -v memex");
+    expect(command).not.toMatch(/(?<!\$MEMEX_CLI )(?<!\$\{MEMEX_CLI\} )(?<!\")\bmemex sync\b/);
+  });
 });
