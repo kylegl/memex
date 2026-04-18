@@ -92,6 +92,7 @@ export async function serveCommand(port: number): Promise<Server | null> {
               created: toDateString(data.created),
               modified: toDateString(data.modified),
               source: String(data.source || ""),
+              generated: String(data.generated || ""),
               category: String(data.category || ""),
               firstLine,
               links,

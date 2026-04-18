@@ -1452,6 +1452,12 @@ body::-webkit-scrollbar { display: none; }
     const cards = await cardsRes.json();
     const linkStats = await linksRes.json();
 
+    const isGeneratedNavIndex = (card) => {
+      const source = String(card.source || '').toLowerCase();
+      const generated = String(card.generated || '').toLowerCase();
+      return source === 'organize' && generated === 'navigation-index';
+    };
+
     // Build edges from card content
     gAllEdges = [];
     const slugSet = new Set(cards.map(c => c.slug));
@@ -1493,8 +1499,10 @@ body::-webkit-scrollbar { display: none; }
       });
     });
 
-    // Orphan count
-    const orphanCount = cards.length - connected.size;
+    // Orphan count (exclude generated navigation indexes from orphan metric)
+    const actionableCards = cards.filter(c => !isGeneratedNavIndex(c));
+    const actionableConnectedCount = actionableCards.filter(c => connected.has(c.slug)).length;
+    const orphanCount = Math.max(0, actionableCards.length - actionableConnectedCount);
     document.getElementById('graphOrphanBadge').textContent = orphanCount > 0 ? orphanCount + ' orphan cards' : '';
 
     // Edge anim state
