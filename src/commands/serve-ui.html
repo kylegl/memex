@@ -1463,7 +1463,8 @@ body::-webkit-scrollbar { display: none; }
     const slugSet = new Set(cards.map(c => c.slug));
     cards.forEach(c => {
       (c.links || []).forEach(l => {
-        if (slugSet.has(l)) gAllEdges.push([c.slug, l]);
+        // Ignore self-links in graph physics; they can create zero-length springs (NaN cascade)
+        if (l !== c.slug && slugSet.has(l)) gAllEdges.push([c.slug, l]);
       });
     });
 
@@ -1517,7 +1518,10 @@ body::-webkit-scrollbar { display: none; }
       cam.y = camTarget.y = -ay;
     }
 
-    physicsActive = true;
+    // For large graphs, disable O(n²) force simulation to avoid blank/frozen rendering.
+    // Static circular layout still renders all nodes/edges and remains interactive.
+    const MAX_PHYSICS_NODES = 500;
+    physicsActive = gNodes.length <= MAX_PHYSICS_NODES;
     settleCounter = 0;
     selectedId = null;
     graphInited = true;
@@ -1548,11 +1552,19 @@ body::-webkit-scrollbar { display: none; }
       if (!na || !nb) return;
       const dx = nb.x - na.x, dy = nb.y - na.y;
       const dist = Math.sqrt(dx * dx + dy * dy);
+      if (!Number.isFinite(dist) || dist < 1e-6) return;
       const f = (dist - 130) * 0.001;
       if (na !== dragNode) { na.vx += (dx / dist) * f; na.vy += (dy / dist) * f; }
       if (nb !== dragNode) { nb.vx -= (dx / dist) * f; nb.vy -= (dy / dist) * f; }
     });
     gNodes.forEach(n => {
+      // Heal non-finite state to prevent NaN cascades across the force system
+      if (!Number.isFinite(n.x) || !Number.isFinite(n.y) || !Number.isFinite(n.vx) || !Number.isFinite(n.vy)) {
+        n.x = cx + (Math.random() - 0.5) * 80;
+        n.y = cy + (Math.random() - 0.5) * 80;
+        n.vx = 0;
+        n.vy = 0;
+      }
       if (n === dragNode) { n.vx = 0; n.vy = 0; return; }
       n.vx *= 0.85; n.vy *= 0.85;
       n.x += n.vx; n.y += n.vy;
@@ -1634,6 +1646,7 @@ body::-webkit-scrollbar { display: none; }
     });
 
     // Nodes
+    const renderLabels = gNodes.length <= 600 || !!selectedId || !!hoverNode || !!graphSearchQuery;
     gNodes.forEach(n => {
       const isSel = n.id === selectedId, isHov = n.id === hoverNode, isN = isNbr(n.id), isM = matchesQ(n);
 
@@ -1677,10 +1690,12 @@ body::-webkit-scrollbar { display: none; }
       else if (selectedId) la = isSel ? 0.95 : isN ? 0.45 : 0.06;
       else la = isHov ? 0.7 : 0.25;
 
-      ctx.font = (isSel ? 'bold ' : '') + ((isSel ? 12 : 10) / cam.zoom) + 'px -apple-system,sans-serif';
-      ctx.textAlign = 'center'; ctx.textBaseline = 'top';
-      ctx.fillStyle = 'rgba(255,255,255,' + la + ')';
-      ctx.fillText(n.id, n.x, n.y + n.displayR + 8 / cam.zoom);
+      if (renderLabels) {
+        ctx.font = (isSel ? 'bold ' : '') + ((isSel ? 12 : 10) / cam.zoom) + 'px -apple-system,sans-serif';
+        ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+        ctx.fillStyle = 'rgba(255,255,255,' + la + ')';
+        ctx.fillText(n.id, n.x, n.y + n.displayR + 8 / cam.zoom);
+      }
     });
 
     ctx.restore(); ctx.restore();
