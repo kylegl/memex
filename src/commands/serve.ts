@@ -7,7 +7,7 @@ import { execFile } from "node:child_process";
 import { CardStore } from "../lib/store.js";
 import { parseFrontmatter, extractLinks } from "../lib/parser.js";
 import { readSyncConfig } from "../lib/sync.js";
-import { resolveMemexHome } from "../lib/config.js";
+import { readConfig, resolveMemexHome } from "../lib/config.js";
 
 function toDateString(val: unknown): string {
   if (!val) return "";
@@ -72,7 +72,8 @@ export async function serveCommand(port: number): Promise<Server | null> {
   }
 
   // No sync — serve locally with banner
-  const store = new CardStore(join(home, "cards"), join(home, "archive"));
+  const config = await readConfig(home);
+  const store = new CardStore(join(home, "cards"), join(home, "archive"), config.nestedSlugs);
 
   const server = createServer(async (req, res) => {
     try {

@@ -135,6 +135,7 @@ describe("serve API", () => {
     expect(testCard.created).toBe("2025-01-15");
     expect(testCard.source).toBe("retro");
     expect(testCard.links).toEqual(["linked-card"]);
+    expect(testCard.generated).toBe("");
     expect(testCard.firstLine).toBeTruthy();
   });
 
