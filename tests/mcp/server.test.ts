@@ -37,11 +37,13 @@ async function teardown() {
 describe("MCP server", () => {
   afterEach(teardown);
 
-  it("lists all 13 tools", async () => {
+  it("lists all 15 tools", async () => {
     await setup();
     const { tools } = await client.listTools();
     const names = tools.map((t) => t.name).sort();
     expect(names).toEqual([
+      "flomo_import_parse",
+      "flomo_push",
       "memex_archive",
       "memex_classify",
       "memex_links",

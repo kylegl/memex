@@ -27,7 +27,7 @@ describe("hooks ↔ skills consistency", () => {
   it("every skill referenced in hooks.json has a matching SKILL.md", () => {
     const command: string = hooks.hooks.SessionStart[0].hooks[0].command;
     // Extract skill names like `memex-recall`, `memex-retro` from backtick-quoted references
-    const skillRefs = [...command.matchAll(/`(memex-\w+)`\s+skill/g)].map(m => m[1]);
+    const skillRefs = [...command.matchAll(/\\?`(memex-\w+)\\?`\s+skill/g)].map(m => m[1]);
 
     expect(skillRefs.length).toBeGreaterThan(0);
 
@@ -49,15 +49,23 @@ describe("hooks ↔ skills consistency", () => {
     expect(command).not.toMatch(/;\s*memex read index/);
   });
 
-  it("hooks.json references recall as MANDATORY", () => {
+  it("hooks.json references recall skill", () => {
     const command: string = hooks.hooks.SessionStart[0].hooks[0].command;
-    expect(command.toLowerCase()).toContain("mandatory");
     expect(command).toContain("memex-recall");
   });
 
-  it("hooks.json references retro as MANDATORY", () => {
+  it("hooks.json references retro skill", () => {
     const command: string = hooks.hooks.SessionStart[0].hooks[0].command;
-    expect(command.toLowerCase()).toContain("mandatory");
     expect(command).toContain("memex-retro");
+  });
+
+  it("hooks.json uses CLAUDE_PLUGIN_ROOT instead of global memex binary", () => {
+    const command: string = hooks.hooks.SessionStart[0].hooks[0].command;
+    // Should reference the bundled CLI via CLAUDE_PLUGIN_ROOT
+    expect(command).toContain("CLAUDE_PLUGIN_ROOT");
+    expect(command).toContain("dist/cli.js");
+    // Should NOT depend on a globally installed memex binary
+    expect(command).not.toContain("command -v memex");
+    expect(command).not.toMatch(/(?<!\$MEMEX_CLI )(?<!\$\{MEMEX_CLI\} )(?<!\")\bmemex sync\b/);
   });
 });

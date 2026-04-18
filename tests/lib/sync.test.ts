@@ -277,4 +277,55 @@ describe("GitAdapter", () => {
 
     await rm(bare, { recursive: true });
   });
+
+  it("init rejects bare word 'push' as invalid URL", async () => {
+    const adapter = new GitAdapter(home);
+    await expect(adapter.init("push")).rejects.toThrow("Invalid remote URL");
+  });
+
+  it("init rejects bare word 'pull' as invalid URL", async () => {
+    const adapter = new GitAdapter(home);
+    await expect(adapter.init("pull")).rejects.toThrow("Invalid remote URL");
+  });
+
+  it("init rejects any bare word as invalid URL", async () => {
+    const adapter = new GitAdapter(home);
+    await expect(adapter.init("anything")).rejects.toThrow("Invalid remote URL");
+  });
+
+  it("init rejects relative path 'foo/bar' as invalid URL", async () => {
+    const adapter = new GitAdapter(home);
+    await expect(adapter.init("foo/bar")).rejects.toThrow("Invalid remote URL");
+  });
+
+  it("init rejects 'not@valid' (no colon after host) as invalid URL", async () => {
+    const adapter = new GitAdapter(home);
+    await expect(adapter.init("not@valid")).rejects.toThrow("Invalid remote URL");
+  });
+
+  it("init rejects '../traversal' as invalid URL", async () => {
+    const adapter = new GitAdapter(home);
+    await expect(adapter.init("../traversal")).rejects.toThrow("Invalid remote URL");
+  });
+
+  it("init accepts git@... SSH URL (validation only)", async () => {
+    // Verify URL validation passes — init will fail on push (no real remote), that's OK
+    const adapter = new GitAdapter(home);
+    try {
+      await adapter.init("git@github.com:user/repo.git");
+    } catch (err) {
+      // Any error is fine as long as it's NOT "Invalid remote URL"
+      expect((err as Error).message).not.toContain("Invalid remote URL");
+    }
+  }, 15000);
+
+  it("init accepts https:// URL (validation only)", async () => {
+    const adapter = new GitAdapter(home);
+    try {
+      await adapter.init("https://github.com/user/repo.git");
+    } catch (err) {
+      // Any error is fine as long as it's NOT "Invalid remote URL"
+      expect((err as Error).message).not.toContain("Invalid remote URL");
+    }
+  }, 15000);
 });

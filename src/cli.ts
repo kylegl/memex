@@ -1,14 +1,13 @@
 #!/usr/bin/env node
 import { Command } from "commander";
 import { join, dirname } from "node:path";
-import { homedir } from "node:os";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(readFileSync(join(__dirname, "..", "package.json"), "utf-8"));
-import { CardStore } from "./core/store.js";
-import { readConfig } from "./core/config.js";
+import { CardStore } from "./lib/store.js";
+import { readConfig, resolveMemexHome, warnIfEmptyCards } from "./lib/config.js";
 import { writeCommand } from "./commands/write.js";
 import { readCommand } from "./commands/read.js";
 import { searchCommand } from "./commands/search.js";
@@ -24,12 +23,23 @@ import { organizeCommand } from "./commands/organize.js";
 import { classifyCommand, classifyRecentCommand, classifySlugsForEvent, isAutoClassifyEnabled } from "./commands/classify.js";
 import { reviewCommand } from "./commands/review.js";
 import { maintainCommand } from "./commands/maintain.js";
+import { flomoConfigCommand, flomoPushCommand, flomoImportCommand } from "./commands/flomo.js";
 
 async function getStore(opts?: { nested?: boolean }): Promise<CardStore> {
-  const home = process.env.MEMEX_HOME || join(homedir(), ".memex");
+  const home = await resolveMemexHome();
+  await warnIfEmptyCards(home);
   const config = await readConfig(home);
   const nestedSlugs = opts?.nested ?? config.nestedSlugs;
   return new CardStore(join(home, "cards"), join(home, "archive"), nestedSlugs);
+}
+
+/** Flush stdout before exiting to avoid pipe-buffer truncation (Node.js issue). */
+function exit(code: number): void {
+  if (process.stdout.writableLength === 0) {
+    process.exit(code);
+  } else {
+    process.stdout.once("drain", () => process.exit(code));
+  }
 }
 
 async function readStdin(): Promise<string> {
@@ -50,21 +60,22 @@ program
   .option("--nested", "Use nested (path-preserving) slugs for this command")
   .option("--all", "Search across all configured searchDirs in addition to cards/")
   .option("-s, --semantic", "Use embedding-based semantic search")
+  .option("-c, --compact", "Compact output (one line per result)")
   .option("--category <value>", "Filter by frontmatter category")
   .option("--tag <value>", "Filter by frontmatter tag")
   .option("--author <value>", "Filter by frontmatter author/source")
   .option("--since <date>", "Only cards created/modified after this date (YYYY-MM-DD)")
   .option("--before <date>", "Only cards created/modified before this date (YYYY-MM-DD)")
-  .action(async (query: string | undefined, opts: { limit: string; nested?: boolean; all?: boolean; semantic?: boolean; category?: string; tag?: string; author?: string; since?: string; before?: string }) => {
-    const home = process.env.MEMEX_HOME || join(homedir(), ".memex");
+  .action(async (query: string | undefined, opts: { limit: string; nested?: boolean; all?: boolean; semantic?: boolean; compact?: boolean; category?: string; tag?: string; author?: string; since?: string; before?: string }) => {
+    const home = await resolveMemexHome();
     const config = await readConfig(home);
     const store = await getStore({ nested: opts.nested });
     const filter = (opts.category || opts.tag || opts.author || opts.since || opts.before)
       ? { category: opts.category, tag: opts.tag, author: opts.author, since: opts.since, before: opts.before }
       : undefined;
-    const result = await searchCommand(store, query, { limit: parseInt(opts.limit), all: opts.all, config, memexHome: home, semantic: opts.semantic, filter });
+    const result = await searchCommand(store, query, { limit: parseInt(opts.limit, 10), all: opts.all, config, memexHome: home, semantic: opts.semantic, compact: opts.compact, filter });
     if (result.output) process.stdout.write(result.output + "\n");
-    process.exit(result.exitCode);
+    exit(result.exitCode);
   });
 
 program
@@ -78,7 +89,7 @@ program
       process.stdout.write(result.content! + "\n");
     } else {
       process.stderr.write(result.error! + "\n");
-      process.exit(1);
+      exit(1);
     }
   });
 
@@ -86,7 +97,7 @@ program
   .command("write <slug>")
   .description("Write a card (content via stdin)")
   .action(async (slug: string) => {
-    const home = process.env.MEMEX_HOME || join(homedir(), ".memex");
+    const home = await resolveMemexHome();
     const store = await getStore();
     const input = await readStdin();
 
@@ -100,11 +111,11 @@ program
       });
       if (!result.success) {
         process.stderr.write(result.error! + "\n");
-        process.exit(1);
+        exit(1);
       }
     } catch (error) {
       process.stderr.write((error as Error).message + "\n");
-      process.exit(1);
+      exit(1);
     }
   });
 
@@ -115,7 +126,7 @@ program
     const store = await getStore();
     const result = await linksCommand(store, slug);
     if (result.output) process.stdout.write(result.output + "\n");
-    process.exit(result.exitCode);
+    exit(result.exitCode);
   });
 
 program
@@ -124,12 +135,12 @@ program
   .option("--nested", "Use nested (path-preserving) slugs for this command")
   .option("--all", "Search across all configured searchDirs in addition to cards/")
   .action(async (slug: string, opts: { nested?: boolean; all?: boolean }) => {
-    const home = process.env.MEMEX_HOME || join(homedir(), ".memex");
+    const home = await resolveMemexHome();
     const config = await readConfig(home);
     const store = await getStore({ nested: opts.nested });
     const result = await backlinksCommand(store, slug, { all: opts.all, config, memexHome: home });
     if (result.output) process.stdout.write(result.output + "\n");
-    process.exit(result.exitCode);
+    exit(result.exitCode);
   });
 
 program
@@ -140,7 +151,7 @@ program
     const result = await archiveCommand(store, slug);
     if (!result.success) {
       process.stderr.write(result.error! + "\n");
-      process.exit(1);
+      exit(1);
     }
   });
 
@@ -149,7 +160,7 @@ program
   .description("Start web UI for browsing cards")
   .option("-p, --port <n>", "Port number", "3939")
   .action(async (opts: { port: string }) => {
-    await serveCommand(parseInt(opts.port));
+    await serveCommand(parseInt(opts.port, 10));
   });
 
 program
@@ -163,7 +174,7 @@ program
       arg: string | undefined,
       opts: { init?: boolean; status?: boolean }
     ) => {
-      const home = process.env.MEMEX_HOME || join(homedir(), ".memex");
+      const home = await resolveMemexHome();
 
       // memex sync on / memex sync off
       if (arg === "on" || arg === "off") {
@@ -171,23 +182,58 @@ program
         if (result.output) process.stdout.write(result.output + "\n");
         if (result.error) {
           process.stderr.write(result.error + "\n");
-          process.exit(1);
+          exit(1);
+        }
+        return;
+      }
+
+      // memex sync push / memex sync pull
+      if (arg === "push" || arg === "pull") {
+        const result = await syncCommand(home, { action: arg as "push" | "pull" });
+        if (result.output) process.stdout.write(result.output + "\n");
+        if (result.error) {
+          process.stderr.write(result.error + "\n");
+          exit(1);
+        }
+        return;
+      }
+
+      // memex sync status (positional alias)
+      if (arg === "status") {
+        const result = await syncCommand(home, { status: true });
+        if (result.output) process.stdout.write(result.output + "\n");
+        if (result.error) {
+          process.stderr.write(result.error + "\n");
+          exit(1);
         }
         return;
       }
 
       const result = await syncCommand(home, {
         ...opts,
-        remote: arg,
-        init: opts.init || !!arg,
+        remote: opts.init ? arg : undefined,
+        init: opts.init,
       });
       if (result.output) process.stdout.write(result.output + "\n");
       if (result.error) {
         process.stderr.write(result.error + "\n");
-        process.exit(1);
+        exit(1);
       }
     }
   );
+
+program
+  .command("organize")
+  .description("Analyze card network: orphans, hubs, conflicts, and contradiction pairs")
+  .option("--since <date>", "Only check cards modified since this date (YYYY-MM-DD)")
+  .option("--nested", "Use nested (path-preserving) slugs for this command")
+  .action(async (opts: { since?: string; nested?: boolean }) => {
+    const home = await resolveMemexHome();
+    const store = await getStore({ nested: opts.nested });
+    const result = await organizeCommand(store, opts.since ?? null, { memexHome: home });
+    if (result.output) process.stdout.write(result.output + "\n");
+    exit(result.exitCode);
+  });
 
 program
   .command("mcp")
@@ -195,7 +241,7 @@ program
   .action(async () => {
     const { createMemexServer } = await import("./mcp/server.js");
     const { StdioServerTransport } = await import("@modelcontextprotocol/sdk/server/stdio.js");
-    const home = process.env.MEMEX_HOME || join(homedir(), ".memex");
+    const home = await resolveMemexHome();
     const store = await getStore();
     const server = createMemexServer(store, home);
     const transport = new StdioServerTransport();
@@ -209,7 +255,7 @@ program
   .option("--dry-run", "Preview without writing")
   .option("--dir <path>", "Override source directory")
   .action(async (source: string | undefined, opts: { dryRun?: boolean; dir?: string }) => {
-    const home = process.env.MEMEX_HOME || join(homedir(), ".memex");
+    const home = await resolveMemexHome();
     const store = await getStore();
 
     try {
@@ -225,11 +271,11 @@ program
       if (result.output) process.stdout.write(result.output + "\n");
       if (!result.success) {
         if (result.error) process.stderr.write(result.error + "\n");
-        process.exit(1);
+        exit(1);
       }
     } catch (error) {
       process.stderr.write((error as Error).message + "\n");
-      process.exit(1);
+      exit(1);
     }
   });
 
@@ -238,17 +284,17 @@ program
   .description("Check memex health and configuration")
   .option("--check-collisions", "Check for slug collisions in basename mode")
   .action(async (opts: { checkCollisions?: boolean }) => {
-    const home = process.env.MEMEX_HOME || join(homedir(), ".memex");
+    const home = await resolveMemexHome();
     const cardsDir = join(home, "cards");
     const archiveDir = join(home, "archive");
 
     if (opts.checkCollisions) {
       const result = await doctorCommand(cardsDir, archiveDir);
       if (result.output) process.stdout.write(result.output + "\n");
-      process.exit(result.exitCode);
+      exit(result.exitCode);
     } else {
       process.stderr.write("No check specified. Use --check-collisions to check for slug collisions.\n");
-      process.exit(1);
+      exit(1);
     }
   });
 
@@ -257,7 +303,7 @@ program
   .description("Migrate memex configuration")
   .option("--enable-nested", "Enable nestedSlugs in config")
   .action(async (opts: { enableNested?: boolean }) => {
-    const home = process.env.MEMEX_HOME || join(homedir(), ".memex");
+    const home = await resolveMemexHome();
     const cardsDir = join(home, "cards");
     const archiveDir = join(home, "archive");
 
@@ -266,24 +312,12 @@ program
       if (result.output) process.stdout.write(result.output + "\n");
       if (!result.success) {
         if (result.error) process.stderr.write(result.error + "\n");
-        process.exit(1);
+        exit(1);
       }
     } else {
       process.stderr.write("No migration specified. Use --enable-nested to enable nestedSlugs.\n");
-      process.exit(1);
+      exit(1);
     }
-  });
-
-program
-  .command("organize")
-  .description("Analyze graph health and refresh navigation indexes")
-  .option("--since <date>", "Only check cards modified since this date (YYYY-MM-DD)")
-  .action(async (opts: { since?: string }) => {
-    const home = process.env.MEMEX_HOME || join(homedir(), ".memex");
-    const store = await getStore();
-    const result = await organizeCommand(store, opts.since ?? null, { memexHome: home });
-    if (result.output) process.stdout.write(result.output + "\n");
-    process.exit(result.exitCode);
   });
 
 program
@@ -295,7 +329,7 @@ program
   .option("--apply-safe", "Auto-apply safe high-confidence classify proposals")
   .option("--explain", "Include rationale in output")
   .action(async (opts: { slug?: string; recent?: string; dryRun?: boolean; applySafe?: boolean; explain?: boolean }) => {
-    const home = process.env.MEMEX_HOME || join(homedir(), ".memex");
+    const home = await resolveMemexHome();
     const store = await getStore();
     const result = opts.recent
       ? await classifyRecentCommand(store, {
@@ -316,7 +350,7 @@ program
 
     const stream = result.success ? process.stdout : process.stderr;
     stream.write(result.output + "\n");
-    if (!result.success) process.exit(1);
+    if (!result.success) exit(1);
   });
 
 program
@@ -326,7 +360,7 @@ program
   .option("--approve <id>", "Approve a proposal id")
   .option("--reject <id>", "Reject a proposal id")
   .action(async (opts: { status?: string; approve?: string; reject?: string }) => {
-    const home = process.env.MEMEX_HOME || join(homedir(), ".memex");
+    const home = await resolveMemexHome();
     const action = opts.approve ? "approve" : opts.reject ? "reject" : "list";
     const proposalId = opts.approve || opts.reject;
 
@@ -339,7 +373,7 @@ program
 
     const stream = result.success ? process.stdout : process.stderr;
     stream.write(result.output + "\n");
-    if (!result.success) process.exit(1);
+    if (!result.success) exit(1);
   });
 
 program
@@ -349,7 +383,7 @@ program
   .option("--apply-safe", "Auto-apply safe redirect classify proposals")
   .option("--max-body-lines <n>", "Split-suggestion threshold", "220")
   .action(async (opts: { dryRun?: boolean; applySafe?: boolean; maxBodyLines: string }) => {
-    const home = process.env.MEMEX_HOME || join(homedir(), ".memex");
+    const home = await resolveMemexHome();
     const store = await getStore();
     const result = await maintainCommand(store, {
       memexHome: home,
@@ -360,7 +394,53 @@ program
 
     const stream = result.success ? process.stdout : process.stderr;
     stream.write(result.output + "\n");
-    if (!result.success) process.exit(1);
+    if (!result.success) exit(1);
+  });
+
+const flomo = program
+  .command("flomo")
+  .description("Flomo integration (push/import/config)");
+
+flomo
+  .command("config")
+  .description("Configure flomo webhook URL")
+  .option("--set-webhook <url>", "Set the flomo webhook URL")
+  .option("--show", "Show current configuration")
+  .action(async (opts: { setWebhook?: string; show?: boolean }) => {
+    const home = await resolveMemexHome();
+    const result = await flomoConfigCommand(home, opts);
+    process.stdout.write(result.output + "\n");
+    exit(result.exitCode);
+  });
+
+flomo
+  .command("push [slug]")
+  .description("Push card(s) to flomo")
+  .option("--all", "Push all matching cards")
+  .option("--source <value>", "Filter by source")
+  .option("--tag <value>", "Filter by tag or category")
+  .option("--dry-run", "Preview without pushing")
+  .action(async (slug: string | undefined, opts: { all?: boolean; source?: string; tag?: string; dryRun?: boolean }) => {
+    if (!slug && !opts.all && !opts.source && !opts.tag) {
+      process.stderr.write("Error: specify a slug or use --all/--source/--tag to filter.\n");
+      exit(1);
+    }
+    const home = await resolveMemexHome();
+    const store = await getStore();
+    const result = await flomoPushCommand(store, home, slug, opts);
+    process.stdout.write(result.output + "\n");
+    exit(result.exitCode);
+  });
+
+flomo
+  .command("import <file>")
+  .description("Import memos from flomo HTML export")
+  .option("--dry-run", "Preview without writing cards")
+  .action(async (file: string, opts: { dryRun?: boolean }) => {
+    const store = await getStore();
+    const result = await flomoImportCommand(store, file, opts);
+    process.stdout.write(result.output + "\n");
+    exit(result.exitCode);
   });
 
 program.parse();

@@ -9,6 +9,7 @@ interface SyncOptions {
   remote?: string;
   auto?: string; // "on" | "off"
   status?: boolean;
+  action?: "push" | "pull";
 }
 
 interface SyncCommandResult {
@@ -34,6 +35,22 @@ export async function syncCommand(
     } catch (err) {
       return { success: false, error: (err as Error).message };
     }
+  }
+
+  if (opts.action === "push" || opts.action === "pull") {
+    const config = await readSyncConfig(home);
+    if (!config.remote) {
+      return {
+        success: false,
+        error: "Not initialized. Run `memex sync --init` first.",
+      };
+    }
+    const result = opts.action === "push" ? await adapter.push() : await adapter.pull();
+    return {
+      success: result.success,
+      output: result.success ? result.message : undefined,
+      error: result.success ? undefined : result.message,
+    };
   }
 
   if (opts.auto !== undefined) {

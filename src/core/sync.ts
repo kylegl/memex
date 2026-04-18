@@ -112,6 +112,16 @@ export class GitAdapter implements SyncAdapter {
 
     let url = remote;
 
+    // Allowlist URL validation: must match a known git remote pattern
+    if (url) {
+      const isSchemeUrl = /^[a-z][a-z0-9+.-]*:\/\//i.test(url);  // https://, ssh://, git://
+      const isSshUrl = /^[a-zA-Z0-9._-]+@[a-zA-Z0-9._-]+:/.test(url);  // git@host:user/repo
+      const isAbsolutePath = url.startsWith("/") || /^[A-Za-z]:[\\\/]/.test(url);  // /path/to/bare-repo or C:\path
+      if (!isSchemeUrl && !isSshUrl && !isAbsolutePath) {
+        throw new Error(`Invalid remote URL: "${url}". Expected a git URL (e.g. git@github.com:user/repo.git or https://github.com/user/repo.git) or an absolute path.`);
+      }
+    }
+
     if (!url) {
       if (!(await ghAvailable())) {
         throw new Error(
