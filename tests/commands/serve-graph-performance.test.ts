@@ -12,10 +12,13 @@ describe("serve-ui graph performance guards", () => {
     expect(html).toContain("else if (gNodes.length <= SAMPLED_PHYSICS_NODES) physicsMode = 'sampled';");
     expect(html).toContain("physicsActive = physicsMode !== 'off';");
 
-    expect(html).toContain("const sampleCount = Math.min(18, Math.max(8, Math.floor(Math.sqrt(nodeCount) * 0.35)));");
-    expect(html).toContain("const settleThreshold = physicsMode === 'full' ? 0.5 : 0.2;");
-    expect(html).toContain("const settleFrames = physicsMode === 'full' ? 30 : 45;");
+    expect(html).toContain("const sampleCount = Math.min(12, Math.max(6, Math.floor(Math.sqrt(nodeCount) * 0.25)));");
+    expect(html).toContain("const avgV = totalV / nodeCount;");
+    expect(html).toContain("const settleThreshold = physicsMode === 'full' ? 0.12 : 0.03;");
+    expect(html).toContain("const settleFrames = physicsMode === 'full' ? 30 : 40;");
+    expect(html).toContain("if (physicsMode === 'sampled' && physicsTicks > 220) {");
 
+    expect(html).toContain("let physicsActive = false, settleCounter = 0, physicsTicks = 0;");
     expect(html).toContain("const renderAllLabels = gNodes.length <= 250;");
     expect(html).toContain("const shouldLabel = renderAllLabels || isSel || isHov || isN || (graphSearchQuery && isM);");
   });
