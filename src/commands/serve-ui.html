@@ -1412,8 +1412,10 @@ body::-webkit-scrollbar { display: none; }
   let camTarget = { x: 0, y: 0, zoom: 1 };
   let dragStart = null, camStart = null, isDragging = false, dragNode = null;
   let gNodes = [], gEdges = [], gAllEdges = [];
+  let gNodeById = new Map();
   let selectedId = null, hoverNode = null;
   let physicsActive = false, settleCounter = 0;
+  let physicsMode = 'off'; // full | sampled | off
   let graphSearchQuery = '';
   let graphInited = false, animRunning = false;
   let t = 0;
@@ -1429,6 +1431,14 @@ body::-webkit-scrollbar { display: none; }
   function H() { return canvas.height / dpr; }
   function toScreen(x, y) { return [(x + cam.x) * cam.zoom + W() / 2, (y + cam.y) * cam.zoom + H() / 2]; }
   function fromScreen(sx, sy) { return [(sx - W() / 2) / cam.zoom - cam.x, (sy - H() / 2) / cam.zoom - cam.y]; }
+  function hash01(str) {
+    let h = 2166136261;
+    for (let i = 0; i < str.length; i++) {
+      h ^= str.charCodeAt(i);
+      h = Math.imul(h, 16777619);
+    }
+    return ((h >>> 0) % 1000000) / 1000000;
+  }
 
   function resizeCanvas() {
     const rect = canvas.parentElement.getBoundingClientRect();
@@ -1476,12 +1486,23 @@ body::-webkit-scrollbar { display: none; }
     const cx = W() * 0.5, cy = H() * 0.5;
 
     gNodes = [];
+    const degree = {};
+    gAllEdges.forEach(([a, b]) => {
+      degree[a] = (degree[a] || 0) + 1;
+      degree[b] = (degree[b] || 0) + 1;
+    });
+
     const connArr = [...connected];
+    const golden = 2.399963229728653; // golden angle (better-than-ring spatial spread)
     connArr.forEach((slug, i) => {
       const card = cards.find(c => c.slug === slug);
-      const angle = (Math.PI * 2 * i / connArr.length) - Math.PI / 2;
-      const dist = 140 + Math.random() * 80;
-      const ec = gAllEdges.filter(([a, b]) => a === slug || b === slug).length;
+      const ec = degree[slug] || 0;
+      const jitterA = hash01(slug + ':a');
+      const jitterR = (hash01(slug + ':r') - 0.5) * 32;
+      const angle = i * golden + jitterA * 0.9;
+      const baseRadius = 28 + Math.sqrt(i + 1) * 10;
+      const hubPull = Math.max(0, 30 - ec * 3.2);
+      const dist = Math.max(24, baseRadius + hubPull + jitterR);
       gNodes.push({
         id: slug,
         title: card ? card.title : slug,
@@ -1499,6 +1520,7 @@ body::-webkit-scrollbar { display: none; }
         selectPulse: 0,
       });
     });
+    gNodeById = new Map(gNodes.map(n => [n.id, n]));
 
     // Orphan count (exclude generated navigation indexes from orphan metric)
     const actionableCards = cards.filter(c => !isGeneratedNavIndex(c));
@@ -1518,10 +1540,17 @@ body::-webkit-scrollbar { display: none; }
       cam.y = camTarget.y = -ay;
     }
 
-    // For large graphs, disable O(n²) force simulation to avoid blank/frozen rendering.
-    // Static circular layout still renders all nodes/edges and remains interactive.
-    const MAX_PHYSICS_NODES = 500;
-    physicsActive = gNodes.length <= MAX_PHYSICS_NODES;
+    // Physics modes by graph size:
+    // - full: all-pairs repulsion (best quality, smaller graphs)
+    // - sampled: sampled repulsion + springs (keeps large graphs organic)
+    // - off: static fallback for extreme sizes
+    const FULL_PHYSICS_NODES = 450;
+    const SAMPLED_PHYSICS_NODES = 4000;
+    if (gNodes.length <= FULL_PHYSICS_NODES) physicsMode = 'full';
+    else if (gNodes.length <= SAMPLED_PHYSICS_NODES) physicsMode = 'sampled';
+    else physicsMode = 'off';
+
+    physicsActive = physicsMode !== 'off';
     settleCounter = 0;
     selectedId = null;
     graphInited = true;
@@ -1531,24 +1560,51 @@ body::-webkit-scrollbar { display: none; }
 
   // Physics
   function simulate() {
-    if (!physicsActive) return;
+    if (!physicsActive || physicsMode === 'off') return;
     const cx = W() * 0.5, cy = H() * 0.5;
+    const nodeCount = gNodes.length;
+    if (!nodeCount) return;
+
     let totalV = 0;
-    gNodes.forEach(n => {
-      if (n === dragNode) return;
-      n.vx += (cx - n.x) * 0.0002;
-      n.vy += (cy - n.y) * 0.0002;
-      gNodes.forEach(m => {
-        if (n === m) return;
-        const dx = n.x - m.x, dy = n.y - m.y;
-        const dist = Math.max(20, Math.sqrt(dx * dx + dy * dy));
-        const f = 6000 / (dist * dist);
-        n.vx += (dx / dist) * f;
-        n.vy += (dy / dist) * f;
-      });
-    });
+    const centerPull = physicsMode === 'full' ? 0.0002 : 0.00012;
+    const repulsionK = physicsMode === 'full' ? 6000 : 9000;
+
+    for (let i = 0; i < nodeCount; i++) {
+      const n = gNodes[i];
+      if (n === dragNode) continue;
+
+      n.vx += (cx - n.x) * centerPull;
+      n.vy += (cy - n.y) * centerPull;
+
+      if (physicsMode === 'full') {
+        for (let j = 0; j < nodeCount; j++) {
+          if (i === j) continue;
+          const m = gNodes[j];
+          const dx = n.x - m.x, dy = n.y - m.y;
+          const dist = Math.max(20, Math.sqrt(dx * dx + dy * dy));
+          if (!Number.isFinite(dist)) continue;
+          const f = repulsionK / (dist * dist);
+          n.vx += (dx / dist) * f;
+          n.vy += (dy / dist) * f;
+        }
+      } else {
+        const sampleCount = Math.min(24, Math.max(10, Math.floor(Math.sqrt(nodeCount) * 0.5)));
+        for (let s = 0; s < sampleCount; s++) {
+          const idx = (i * 131 + s * 977 + t * 17) % nodeCount;
+          const m = gNodes[idx];
+          if (m === n) continue;
+          const dx = n.x - m.x, dy = n.y - m.y;
+          const dist = Math.max(25, Math.sqrt(dx * dx + dy * dy));
+          if (!Number.isFinite(dist)) continue;
+          const f = repulsionK / (dist * dist);
+          n.vx += (dx / dist) * f;
+          n.vy += (dy / dist) * f;
+        }
+      }
+    }
+
     gAllEdges.forEach(([a, b]) => {
-      const na = gNodes.find(n => n.id === a), nb = gNodes.find(n => n.id === b);
+      const na = gNodeById.get(a), nb = gNodeById.get(b);
       if (!na || !nb) return;
       const dx = nb.x - na.x, dy = nb.y - na.y;
       const dist = Math.sqrt(dx * dx + dy * dy);
@@ -1557,6 +1613,8 @@ body::-webkit-scrollbar { display: none; }
       if (na !== dragNode) { na.vx += (dx / dist) * f; na.vy += (dy / dist) * f; }
       if (nb !== dragNode) { nb.vx -= (dx / dist) * f; nb.vy -= (dy / dist) * f; }
     });
+
+    const damping = physicsMode === 'full' ? 0.85 : 0.9;
     gNodes.forEach(n => {
       // Heal non-finite state to prevent NaN cascades across the force system
       if (!Number.isFinite(n.x) || !Number.isFinite(n.y) || !Number.isFinite(n.vx) || !Number.isFinite(n.vy)) {
@@ -1566,19 +1624,26 @@ body::-webkit-scrollbar { display: none; }
         n.vy = 0;
       }
       if (n === dragNode) { n.vx = 0; n.vy = 0; return; }
-      n.vx *= 0.85; n.vy *= 0.85;
-      n.x += n.vx; n.y += n.vy;
+      n.vx *= damping;
+      n.vy *= damping;
+      n.x += n.vx;
+      n.y += n.vy;
       totalV += Math.abs(n.vx) + Math.abs(n.vy);
     });
-    if (totalV < 0.5) { settleCounter++; if (settleCounter > 30) physicsActive = false; }
-    else settleCounter = 0;
+
+    // Auto-settle only in full mode; sampled mode stays gently alive for large graphs.
+    if (physicsMode === 'full') {
+      if (totalV < 0.5) { settleCounter++; if (settleCounter > 30) physicsActive = false; }
+      else settleCounter = 0;
+    }
   }
 
   function updateAnimations() {
     cam.x = lerp(cam.x, camTarget.x, 0.1);
     cam.y = lerp(cam.y, camTarget.y, 0.1);
     cam.zoom = lerp(cam.zoom, camTarget.zoom, 0.1);
-    const isNbr = (id) => selectedId && getNeighbors(selectedId).includes(id);
+    const nbrSet = selectedId ? new Set(getNeighbors(selectedId)) : null;
+    const isNbr = (id) => !!(nbrSet && nbrSet.has(id));
     gNodes.forEach(n => {
       const isSel = n.id === selectedId, isN = isNbr(n.id);
       n.glowAlpha = lerp(n.glowAlpha, isSel ? 1 : isN ? 0.4 : 0, 0.08);
@@ -1617,12 +1682,13 @@ body::-webkit-scrollbar { display: none; }
     ctx.scale(cam.zoom, cam.zoom);
     ctx.translate(cam.x, cam.y);
 
-    const isNbr = (id) => selectedId && getNeighbors(selectedId).includes(id);
+    const nbrSet = selectedId ? new Set(getNeighbors(selectedId)) : null;
+    const isNbr = (id) => !!(nbrSet && nbrSet.has(id));
     const matchesQ = (n) => !graphSearchQuery || n.id.includes(graphSearchQuery) || n.title.toLowerCase().includes(graphSearchQuery);
 
     // Edges
     gAllEdges.forEach(([a, b]) => {
-      const na = gNodes.find(n => n.id === a), nb = gNodes.find(n => n.id === b);
+      const na = gNodeById.get(a), nb = gNodeById.get(b);
       if (!na || !nb) return;
       const key = a + '>' + b;
       const st = gEdges[key] || { alpha: 0, dot: 0 };
@@ -1646,9 +1712,10 @@ body::-webkit-scrollbar { display: none; }
     });
 
     // Nodes
-    const renderLabels = gNodes.length <= 600 || !!selectedId || !!hoverNode || !!graphSearchQuery;
+    const renderAllLabels = gNodes.length <= 250;
     gNodes.forEach(n => {
       const isSel = n.id === selectedId, isHov = n.id === hoverNode, isN = isNbr(n.id), isM = matchesQ(n);
+      const shouldLabel = renderAllLabels || isSel || isHov || isN || (graphSearchQuery && isM);
 
       // Glow
       if (n.glowAlpha > 0.01) {
@@ -1690,11 +1757,24 @@ body::-webkit-scrollbar { display: none; }
       else if (selectedId) la = isSel ? 0.95 : isN ? 0.45 : 0.06;
       else la = isHov ? 0.7 : 0.25;
 
-      if (renderLabels) {
-        ctx.font = (isSel ? 'bold ' : '') + ((isSel ? 12 : 10) / cam.zoom) + 'px -apple-system,sans-serif';
-        ctx.textAlign = 'center'; ctx.textBaseline = 'top';
-        ctx.fillStyle = 'rgba(255,255,255,' + la + ')';
-        ctx.fillText(n.id, n.x, n.y + n.displayR + 8 / cam.zoom);
+      if (shouldLabel) {
+        ctx.font = (isSel ? 'bold ' : '') + ((isSel ? 13 : isHov ? 12 : 10) / cam.zoom) + 'px -apple-system,sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'top';
+        const labelY = n.y + n.displayR + 8 / cam.zoom;
+        const textW = ctx.measureText(n.id).width;
+        if (isSel || isHov) {
+          const padX = 6 / cam.zoom;
+          const padY = 3 / cam.zoom;
+          const boxH = (14 / cam.zoom) + padY * 2;
+          ctx.fillStyle = 'rgba(5,10,20,0.78)';
+          ctx.fillRect(n.x - textW / 2 - padX, labelY - padY, textW + padX * 2, boxH);
+          ctx.strokeStyle = 'rgba(90,200,250,0.35)';
+          ctx.lineWidth = 1 / cam.zoom;
+          ctx.strokeRect(n.x - textW / 2 - padX, labelY - padY, textW + padX * 2, boxH);
+        }
+        ctx.fillStyle = 'rgba(255,255,255,' + (isSel || isHov ? 0.95 : la) + ')';
+        ctx.fillText(n.id, n.x, labelY);
       }
     });
 
@@ -1833,7 +1913,7 @@ body::-webkit-scrollbar { display: none; }
   }
 
   function navigateGraphNode(slug) {
-    const target = gNodes.find(n => n.id === slug);
+    const target = gNodeById.get(slug);
     if (!target) return;
     hidePopover();
     selectedId = slug;
