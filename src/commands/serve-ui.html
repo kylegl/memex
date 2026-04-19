@@ -1566,8 +1566,8 @@ body::-webkit-scrollbar { display: none; }
     if (!nodeCount) return;
 
     let totalV = 0;
-    const centerPull = physicsMode === 'full' ? 0.0002 : 0.00012;
-    const repulsionK = physicsMode === 'full' ? 6000 : 9000;
+    const centerPull = physicsMode === 'full' ? 0.0002 : 0.00008;
+    const repulsionK = physicsMode === 'full' ? 6000 : 4500;
 
     for (let i = 0; i < nodeCount; i++) {
       const n = gNodes[i];
@@ -1588,7 +1588,7 @@ body::-webkit-scrollbar { display: none; }
           n.vy += (dy / dist) * f;
         }
       } else {
-        const sampleCount = Math.min(24, Math.max(10, Math.floor(Math.sqrt(nodeCount) * 0.5)));
+        const sampleCount = Math.min(18, Math.max(8, Math.floor(Math.sqrt(nodeCount) * 0.35)));
         for (let s = 0; s < sampleCount; s++) {
           const idx = (i * 131 + s * 977 + t * 17) % nodeCount;
           const m = gNodes[idx];
@@ -1614,7 +1614,7 @@ body::-webkit-scrollbar { display: none; }
       if (nb !== dragNode) { nb.vx -= (dx / dist) * f; nb.vy -= (dy / dist) * f; }
     });
 
-    const damping = physicsMode === 'full' ? 0.85 : 0.9;
+    const damping = physicsMode === 'full' ? 0.85 : 0.82;
     gNodes.forEach(n => {
       // Heal non-finite state to prevent NaN cascades across the force system
       if (!Number.isFinite(n.x) || !Number.isFinite(n.y) || !Number.isFinite(n.vx) || !Number.isFinite(n.vy)) {
@@ -1631,10 +1631,14 @@ body::-webkit-scrollbar { display: none; }
       totalV += Math.abs(n.vx) + Math.abs(n.vy);
     });
 
-    // Auto-settle only in full mode; sampled mode stays gently alive for large graphs.
-    if (physicsMode === 'full') {
-      if (totalV < 0.5) { settleCounter++; if (settleCounter > 30) physicsActive = false; }
-      else settleCounter = 0;
+    // Auto-settle in both full/sampled modes so the graph doesn't bounce forever.
+    const settleThreshold = physicsMode === 'full' ? 0.5 : 0.2;
+    const settleFrames = physicsMode === 'full' ? 30 : 45;
+    if (totalV < settleThreshold) {
+      settleCounter++;
+      if (settleCounter > settleFrames) physicsActive = false;
+    } else {
+      settleCounter = 0;
     }
   }
 
