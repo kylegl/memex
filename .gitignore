@@ -6,3 +6,4 @@ dist/
 .superpowers/
 .agents/sources/
 .agents/runtime/
+.rodney/
