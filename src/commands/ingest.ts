@@ -1,9 +1,20 @@
-import { CardStore } from "../core/store.js";
+import { readConfig, type MemexConfig } from "../core/config.js";
+import {
+  createPiIngestWorkflow,
+  ensurePiIngestRuntimeAvailable,
+  resolveIngestAgentConfig,
+  type IngestAgentWorkflow,
+  type IngestClassifyOutput,
+  type IngestMediaType,
+  type IngestSynthesizeOutput,
+} from "../core/ingest-agent.js";
 import { stringifyFrontmatter } from "../core/parser.js";
+import { CardStore } from "../core/store.js";
 import { writeCommand } from "./write.js";
 
-export type IngestContentKind = "research-paper" | "article" | "youtube-video" | "web-page";
+export type IngestContentKind = IngestMediaType;
 export type IngestKindSelection = "auto" | IngestContentKind;
+export type IngestAgentMode = "required" | "optional" | "off";
 
 export interface IngestUrlOptions {
   dryRun?: boolean;
@@ -15,6 +26,11 @@ export interface IngestUrlOptions {
   maxContentChars?: number;
   fetchFn?: typeof globalThis.fetch;
   now?: Date;
+  memexHome?: string;
+  config?: Partial<Pick<MemexConfig, "memexIngestAgentName" | "memexIngestAgentModel" | "memexIngestAgentThinking">>;
+  workflow?: IngestAgentWorkflow;
+  agentMode?: IngestAgentMode;
+  env?: NodeJS.ProcessEnv;
   afterWrite?: (ctx: { slug: string; content: string }) => Promise<void>;
 }
 
@@ -56,10 +72,31 @@ interface KindConfig {
   kindTag: string;
 }
 
+interface WorkflowResolution {
+  workflow?: IngestAgentWorkflow;
+  warnings: string[];
+  error?: string;
+}
+
+interface BodyInput {
+  detectedKind: IngestContentKind;
+  config: KindConfig;
+  summaryText: string;
+  keyPoints: string[];
+  signals: ExtractedSignals;
+  snapshot: FetchSnapshot;
+  now: string;
+  workflowMode: "agentic" | "deterministic";
+  mediaTypeSource: "override" | "agent" | "heuristic";
+  classifyDecision?: IngestClassifyOutput;
+  synthDecision?: IngestSynthesizeOutput;
+  workflowWarnings: string[];
+}
+
 const DEFAULT_TIMEOUT_MS = 30_000;
 const DEFAULT_MAX_CONTENT_CHARS = 2_000_000;
 const DEFAULT_EXCERPT_CHARS = 1800;
-const INGEST_USER_AGENT = "memex-ingest/0.1 (+https://github.com/iamtouchskyer/memex)";
+const INGEST_USER_AGENT = "memex-ingest/0.2 (+https://github.com/iamtouchskyer/memex)";
 
 const KIND_CONFIG: Record<IngestContentKind, KindConfig> = {
   "research-paper": {
@@ -110,6 +147,7 @@ export async function ingestUrlCommand(
   const fetchFn = options.fetchFn ?? globalThis.fetch;
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const maxContentChars = options.maxContentChars ?? DEFAULT_MAX_CONTENT_CHARS;
+  const agentMode = options.agentMode ?? "required";
 
   let snapshot: FetchSnapshot;
   try {
@@ -131,11 +169,101 @@ export async function ingestUrlCommand(
   }
 
   const signals = extractSignals(snapshot, parsedUrl);
-  const detectedKind = detectKind(parsedUrl, snapshot, signals, kindSelection);
-  const config = KIND_CONFIG[detectedKind];
+  const heuristicKind = detectKind(parsedUrl, snapshot, signals, kindSelection);
 
-  const resolvedTitle = resolveTitle(options.title, signals.title, parsedUrl, detectedKind);
-  const resolvedSlug = await resolveTargetSlug(store, resolvedTitle, detectedKind, options.slug);
+  const workflowResolution = await resolveWorkflow(options, agentMode);
+  if (workflowResolution.error) {
+    return {
+      output: workflowResolution.error,
+      exitCode: 1,
+      ingestedSlugs: [],
+    };
+  }
+
+  let classifyDecision: IngestClassifyOutput | undefined;
+  let synthDecision: IngestSynthesizeOutput | undefined;
+
+  const workflowWarnings = [...workflowResolution.warnings];
+  const workflow = workflowResolution.workflow;
+
+  let selectedKind: IngestContentKind = kindSelection === "auto" ? heuristicKind : kindSelection;
+  let mediaTypeSource: "override" | "agent" | "heuristic" = kindSelection === "auto" ? "heuristic" : "override";
+
+  if (kindSelection === "auto" && workflow) {
+    try {
+      classifyDecision = await workflow.classifyMedia({
+        url: snapshot.finalUrl,
+        detectedByHeuristic: heuristicKind,
+        contentType: snapshot.contentType,
+        host: snapshot.host,
+        title: signals.title,
+        description: signals.description,
+        abstractText: signals.abstractText,
+        excerpt: signals.excerpt,
+      });
+
+      selectedKind = classifyDecision.mediaType;
+      mediaTypeSource = "agent";
+    } catch (error) {
+      if (agentMode === "required") {
+        return {
+          output: `Error: ${(error as Error).message}`,
+          exitCode: 1,
+          ingestedSlugs: [],
+        };
+      }
+      workflowWarnings.push(`agent classify fallback to heuristic: ${(error as Error).message}`);
+    }
+  }
+
+  const deterministicTitle = resolveTitle(options.title, signals.title, parsedUrl, selectedKind);
+  const deterministicSummary = resolveSummaryText(selectedKind, signals, snapshot);
+  const deterministicKeyPoints = extractKeyPoints(deterministicSummary, selectedKind);
+
+  if (workflow) {
+    try {
+      synthDecision = await workflow.synthesizeIngestion({
+        url: snapshot.finalUrl,
+        mediaType: selectedKind,
+        classifyRationale: classifyDecision?.rationale,
+        rawData: {
+          finalUrl: snapshot.finalUrl,
+          host: snapshot.host,
+          contentType: snapshot.contentType,
+          title: signals.title,
+          description: signals.description,
+          abstractText: signals.abstractText,
+          firstParagraph: signals.firstParagraph,
+          excerpt: signals.excerpt,
+        },
+      });
+
+      if (kindSelection === "auto" && synthDecision.mediaType) {
+        selectedKind = synthDecision.mediaType;
+        mediaTypeSource = "agent";
+      }
+    } catch (error) {
+      if (agentMode === "required") {
+        return {
+          output: `Error: ${(error as Error).message}`,
+          exitCode: 1,
+          ingestedSlugs: [],
+        };
+      }
+      workflowWarnings.push(`agent synthesis fallback to deterministic summary: ${(error as Error).message}`);
+    }
+  }
+
+  const config = KIND_CONFIG[selectedKind];
+
+  const resolvedTitle = resolveTitle(
+    options.title,
+    firstNonEmpty(synthDecision?.title, deterministicTitle),
+    parsedUrl,
+    selectedKind,
+  );
+
+  const resolvedSlug = await resolveTargetSlug(store, resolvedTitle, selectedKind, options.slug);
   if (!resolvedSlug) {
     return {
       output: `Error: Could not resolve slug for '${resolvedTitle}'.`,
@@ -155,39 +283,67 @@ export async function ingestUrlCommand(
     }
   }
 
-  const summaryText = resolveSummaryText(detectedKind, signals, snapshot);
-  const keyPoints = extractKeyPoints(summaryText, detectedKind);
-  const sourceValue = (options.source || "ingest-url").trim() || "ingest-url";
+  const summaryText = firstNonEmpty(
+    synthDecision?.summary,
+    deterministicSummary,
+    "No summary extracted.",
+  );
 
+  const keyPoints = normalizeStringArray(synthDecision?.keyPoints, 8)
+    ?? deterministicKeyPoints;
+
+  const sourceValue = (options.source || "ingest-url").trim() || "ingest-url";
   const now = options.now ?? new Date();
   const today = now.toISOString().split("T")[0];
 
-  const tags = buildTags(detectedKind, snapshot.host);
+  const mergedTags = uniqueNonEmpty([
+    ...buildTags(selectedKind, snapshot.host),
+    ...normalizeStringArray(synthDecision?.tags, 12) ?? [],
+  ]);
+
+  const finalCategory = normalizeCategory(synthDecision?.category) || config.category;
+
+  const finalAuthors = uniqueNonEmpty([
+    ...(normalizeStringArray(synthDecision?.authors, 12) ?? []),
+    ...signals.authors,
+  ]);
+
   const frontmatter: Record<string, unknown> = {
     title: resolvedTitle,
     created: today,
     source: sourceValue,
-    category: config.category,
-    tags: tags.join(", "),
+    category: finalCategory,
+    tags: mergedTags.join(", "),
     url: snapshot.finalUrl,
-    ingestedType: detectedKind,
+    ingestedType: selectedKind,
     ingestedHost: snapshot.host,
     ingestedAt: today,
+    ingestedWorkflow: workflow ? "agentic" : "deterministic",
+    ingestedMediaTypeSource: mediaTypeSource,
   };
 
-  if (signals.published) frontmatter.published = signals.published;
-  if (signals.doi) frontmatter.doi = signals.doi;
-  if (signals.arxivId) frontmatter.arxiv = signals.arxivId;
-  if (signals.authors.length > 0) frontmatter.authors = signals.authors.join(", ");
+  const published = firstNonEmpty(synthDecision?.published, signals.published);
+  const doi = firstNonEmpty(synthDecision?.doi, signals.doi);
+  const arxiv = firstNonEmpty(synthDecision?.arxivId, signals.arxivId);
+
+  if (published) frontmatter.published = published;
+  if (doi) frontmatter.doi = doi;
+  if (arxiv) frontmatter.arxiv = arxiv;
+  if (finalAuthors.length > 0) frontmatter.authors = finalAuthors.join(", ");
 
   const body = buildBody({
-    detectedKind,
+    detectedKind: selectedKind,
     config,
     summaryText,
     keyPoints,
     signals,
     snapshot,
     now: today,
+    workflowMode: workflow ? "agentic" : "deterministic",
+    mediaTypeSource,
+    classifyDecision,
+    synthDecision,
+    workflowWarnings,
   });
 
   const content = stringifyFrontmatter(body, frontmatter);
@@ -195,11 +351,14 @@ export async function ingestUrlCommand(
   if (options.dryRun) {
     return {
       output: [
-        `[dry-run] Ingest preview`,
-        `Detected content type: ${detectedKind}`,
+        "[dry-run] Ingest preview",
+        `Detected content type: ${selectedKind}`,
+        `Media type source: ${mediaTypeSource}`,
+        `Workflow mode: ${workflow ? "agentic" : "deterministic"}`,
         `Target slug: ${resolvedSlug}`,
-        `Category: ${config.category}`,
-        `Tags: ${tags.join(", ")}`,
+        `Category: ${finalCategory}`,
+        `Tags: ${mergedTags.join(", ")}`,
+        ...workflowWarnings.map((w) => `Warning: ${w}`),
         "",
         previewContent(content),
       ].join("\n"),
@@ -232,14 +391,56 @@ export async function ingestUrlCommand(
   return {
     output: [
       `Ingested URL into '${resolvedSlug}'.`,
-      `Detected content type: ${detectedKind}`,
-      `Category: ${config.category}`,
-      `Tags: ${tags.join(", ")}`,
+      `Detected content type: ${selectedKind}`,
+      `Media type source: ${mediaTypeSource}`,
+      `Workflow mode: ${workflow ? "agentic" : "deterministic"}`,
+      `Category: ${finalCategory}`,
+      `Tags: ${mergedTags.join(", ")}`,
+      ...workflowWarnings.map((w) => `Warning: ${w}`),
       snapshot.truncated ? "Note: Source content was truncated during ingestion." : "",
     ].filter(Boolean).join("\n"),
     exitCode: 0,
     ingestedSlugs: [resolvedSlug],
   };
+}
+
+async function resolveWorkflow(options: IngestUrlOptions, agentMode: IngestAgentMode): Promise<WorkflowResolution> {
+  if (options.workflow) {
+    return { workflow: options.workflow, warnings: [] };
+  }
+
+  if (agentMode === "off") {
+    return { warnings: [] };
+  }
+
+  const env = options.env ?? process.env;
+
+  const configFromMemexHome = options.memexHome
+    ? await readConfig(options.memexHome)
+    : { nestedSlugs: false };
+
+  const mergedConfig = {
+    memexIngestAgentName: options.config?.memexIngestAgentName ?? configFromMemexHome.memexIngestAgentName,
+    memexIngestAgentModel: options.config?.memexIngestAgentModel ?? configFromMemexHome.memexIngestAgentModel,
+    memexIngestAgentThinking: options.config?.memexIngestAgentThinking ?? configFromMemexHome.memexIngestAgentThinking,
+  };
+
+  try {
+    const agent = resolveIngestAgentConfig(mergedConfig, env);
+    await ensurePiIngestRuntimeAvailable(agent, env);
+    return {
+      workflow: createPiIngestWorkflow(agent, env),
+      warnings: [],
+    };
+  } catch (error) {
+    const message = (error as Error).message;
+    if (agentMode === "required") {
+      return { warnings: [], error: message };
+    }
+    return {
+      warnings: [message],
+    };
+  }
 }
 
 function parseHttpUrl(input: string): URL | null {
@@ -534,19 +735,27 @@ function splitSentences(text: string): string[] {
     .filter(Boolean);
 }
 
-function buildBody(input: {
-  detectedKind: IngestContentKind;
-  config: KindConfig;
-  summaryText: string;
-  keyPoints: string[];
-  signals: ExtractedSignals;
-  snapshot: FetchSnapshot;
-  now: string;
-}): string {
+function buildBody(input: BodyInput): string {
   const lines: string[] = [];
   lines.push(`Source URL: ${input.snapshot.finalUrl}`);
   lines.push(`Detected Type: ${input.detectedKind} (${input.config.label})`);
   lines.push(`Ingested: ${input.now}`);
+  lines.push("");
+
+  lines.push("## Workflow");
+  lines.push(`- mode: ${input.workflowMode}`);
+  lines.push(`- media-type-source: ${input.mediaTypeSource}`);
+  if (input.classifyDecision?.rationale) lines.push(`- classifier-rationale: ${input.classifyDecision.rationale}`);
+  if (input.classifyDecision?.rawDataPlan) lines.push(`- raw-data-plan: ${input.classifyDecision.rawDataPlan}`);
+  if (input.classifyDecision?.rawDataHints && input.classifyDecision.rawDataHints.length > 0) {
+    lines.push(`- raw-data-hints: ${input.classifyDecision.rawDataHints.join(" | ")}`);
+  }
+  if (input.synthDecision?.rawDataNotes) lines.push(`- synthesis-notes: ${input.synthDecision.rawDataNotes}`);
+  if (input.workflowWarnings.length > 0) {
+    for (const warning of input.workflowWarnings) {
+      lines.push(`- warning: ${warning}`);
+    }
+  }
   lines.push("");
 
   lines.push("## Summary");
@@ -562,11 +771,11 @@ function buildBody(input: {
   lines.push("## Metadata");
   lines.push(`- host: ${input.snapshot.host}`);
   if (input.snapshot.contentType) lines.push(`- content-type: ${input.snapshot.contentType}`);
-  if (input.signals.authors.length > 0) lines.push(`- authors: ${input.signals.authors.join(", ")}`);
-  if (input.signals.published) lines.push(`- published: ${input.signals.published}`);
-  if (input.signals.doi) lines.push(`- doi: ${input.signals.doi}`);
-  if (input.signals.arxivId) lines.push(`- arxiv: ${input.signals.arxivId}`);
-  if (input.signals.citationPdfUrl) lines.push(`- pdf: ${input.signals.citationPdfUrl}`);
+  if (input.signals.authors.length > 0) lines.push(`- extracted-authors: ${input.signals.authors.join(", ")}`);
+  if (input.signals.published) lines.push(`- extracted-published: ${input.signals.published}`);
+  if (input.signals.doi) lines.push(`- extracted-doi: ${input.signals.doi}`);
+  if (input.signals.arxivId) lines.push(`- extracted-arxiv: ${input.signals.arxivId}`);
+  if (input.signals.citationPdfUrl) lines.push(`- extracted-pdf: ${input.signals.citationPdfUrl}`);
   lines.push("");
 
   if (input.signals.excerpt) {
@@ -579,8 +788,8 @@ function buildBody(input: {
 
 function previewContent(content: string): string {
   const lines = content.split("\n");
-  if (lines.length <= 80) return content;
-  return `${lines.slice(0, 80).join("\n")}\n...\n(Preview truncated)`;
+  if (lines.length <= 100) return content;
+  return `${lines.slice(0, 100).join("\n")}\n...\n(Preview truncated)`;
 }
 
 function parseMeta(html: string): Record<string, string[]> {
@@ -707,6 +916,19 @@ function splitAuthors(value: string): string[] {
     .filter(Boolean);
 }
 
+function normalizeStringArray(value: string[] | undefined, maxItems: number): string[] | undefined {
+  if (!value || value.length === 0) return undefined;
+  return uniqueNonEmpty(value)
+    .slice(0, maxItems)
+    .map((item) => truncate(item, 280));
+}
+
+function normalizeCategory(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  const cleaned = value.trim().toLowerCase().replace(/[^a-z0-9_-]/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "");
+  return cleaned || undefined;
+}
+
 function uniqueNonEmpty(values: string[]): string[] {
   const seen = new Set<string>();
   const out: string[] = [];
@@ -723,9 +945,9 @@ function uniqueNonEmpty(values: string[]): string[] {
   return out;
 }
 
-function firstNonEmpty(...values: string[]): string {
+function firstNonEmpty(...values: Array<string | undefined>): string {
   for (const value of values) {
-    const cleaned = normalizeWhitespace(value);
+    const cleaned = normalizeWhitespace(value || "");
     if (cleaned) return cleaned;
   }
   return "";

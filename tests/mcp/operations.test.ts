@@ -182,7 +182,7 @@ describe("High-level operations", () => {
     try {
       const result = await client.callTool({
         name: "memex_ingest_url",
-        arguments: { url: "https://example.org/mcp-paper" },
+        arguments: { url: "https://example.org/mcp-paper", agent_mode: "off" },
       });
       expect(result.isError).toBeFalsy();
       const text = (result.content as Array<{ text: string }>)[0].text;

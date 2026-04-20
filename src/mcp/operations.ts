@@ -179,15 +179,16 @@ export function registerOperations(
 
   // ---- memex_ingest_url ----
   server.registerTool("memex_ingest_url", {
-    description: "Ingest a URL into memex. Detects content type (research paper/article/youtube/web), extracts key metadata, and creates a card with summary + key points.",
+    description: "Ingest a URL into memex using an agentic workflow by default: classify media type -> interpret raw data -> synthesize summary/key points into a card.",
     inputSchema: z.object({
       url: z.string().describe("HTTP(S) URL to ingest"),
       dry_run: z.boolean().optional().describe("Preview without writing card"),
       slug: z.string().optional().describe("Optional slug override"),
       title: z.string().optional().describe("Optional title override"),
       kind: z.enum(["auto", "research-paper", "article", "youtube-video", "web-page"]).optional().describe("Optional content-type override"),
+      agent_mode: z.enum(["required", "optional", "off"]).optional().describe("Agent mode: required (default), optional fallback, or off"),
     }),
-  }, async ({ url, dry_run, slug, title, kind }) => {
+  }, async ({ url, dry_run, slug, title, kind, agent_mode }) => {
     await hooks.run("pre", "import");
 
     try {
@@ -197,6 +198,8 @@ export function registerOperations(
         title,
         kind: kind ?? "auto",
         source: getClientName(),
+        memexHome: home,
+        agentMode: agent_mode ?? "required",
         afterWrite: async ({ slug: writtenSlug }) => {
           if (!isAutoClassifyEnabled()) return;
           const classify = await classifySlugsForEvent(store, home, [writtenSlug], "post-import");

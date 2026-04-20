@@ -30,6 +30,12 @@ export interface MemexConfig {
   memexProposalAgentModel?: string;
   /** Configured proposal reasoning effort. */
   memexProposalAgentThinking?: "low" | "medium" | "high";
+  /** Configured ingest agent name (agentic ingestion workflow). */
+  memexIngestAgentName?: string;
+  /** Configured ingest model identifier. */
+  memexIngestAgentModel?: string;
+  /** Configured ingest reasoning effort. */
+  memexIngestAgentThinking?: "low" | "medium" | "high";
 }
 
 /**
@@ -58,6 +64,11 @@ export async function readConfig(memexHome: string): Promise<MemexConfig> {
       memexProposalAgentModel: typeof parsed.memexProposalAgentModel === "string" ? parsed.memexProposalAgentModel : undefined,
       memexProposalAgentThinking: isValidThinking(parsed.memexProposalAgentThinking)
         ? parsed.memexProposalAgentThinking
+        : undefined,
+      memexIngestAgentName: typeof parsed.memexIngestAgentName === "string" ? parsed.memexIngestAgentName : undefined,
+      memexIngestAgentModel: typeof parsed.memexIngestAgentModel === "string" ? parsed.memexIngestAgentModel : undefined,
+      memexIngestAgentThinking: isValidThinking(parsed.memexIngestAgentThinking)
+        ? parsed.memexIngestAgentThinking
         : undefined,
     };
   } catch {

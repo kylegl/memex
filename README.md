@@ -91,7 +91,7 @@ If you've set up sync, `memex serve` opens [memra.vercel.app](https://memra.verc
 memex search [query]          # search cards, or list all
 memex read <slug>             # read a card
 memex write <slug>            # write a card (stdin)
-memex ingest-url <url>        # ingest URL (paper/article/youtube/web) into a card
+memex ingest-url <url>        # agentic ingest: classify -> extract -> synthesize into a card
 memex links [slug]            # link graph stats
 memex archive <slug>          # archive a card
 memex organize [--since DATE] # analyze graph health + refresh navigation indexes

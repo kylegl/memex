@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { CardStore } from "../../src/core/store.js";
 import { parseFrontmatter } from "../../src/core/parser.js";
 import { ingestUrlCommand } from "../../src/commands/ingest.js";
+import type { IngestAgentWorkflow } from "../../src/core/ingest-agent.js";
 
 const ARTICLE_HTML = `
 <!doctype html>
@@ -49,6 +50,31 @@ function fetchWith(html: string, contentType = "text/html") {
     });
 }
 
+function fakeWorkflow(partial?: {
+  mediaType?: "research-paper" | "article" | "youtube-video" | "web-page";
+  summary?: string;
+  keyPoints?: string[];
+}): IngestAgentWorkflow {
+  return {
+    async classifyMedia(input) {
+      return {
+        mediaType: partial?.mediaType ?? input.detectedByHeuristic,
+        rationale: "workflow-classifier",
+        rawDataPlan: "use extracted html snapshot",
+        rawDataHints: ["prefer abstract when available"],
+      };
+    },
+    async synthesizeIngestion(input) {
+      return {
+        mediaType: partial?.mediaType ?? input.mediaType,
+        summary: partial?.summary ?? "Agentic summary from workflow",
+        keyPoints: partial?.keyPoints ?? ["Point A", "Point B", "Point C"],
+        tags: ["agentic", "workflow"],
+      };
+    },
+  };
+}
+
 describe("ingestUrlCommand", () => {
   let tmpDir: string;
   let store: CardStore;
@@ -74,6 +100,7 @@ describe("ingestUrlCommand", () => {
     const result = await ingestUrlCommand(store, "https://example.com/blog/post", {
       dryRun: true,
       fetchFn: fetchWith(ARTICLE_HTML),
+      workflow: fakeWorkflow({ mediaType: "article" }),
     });
 
     expect(result.exitCode).toBe(0);
@@ -87,6 +114,7 @@ describe("ingestUrlCommand", () => {
     const result = await ingestUrlCommand(store, "https://example.org/papers/agent-memory", {
       fetchFn: fetchWith(PAPER_HTML),
       source: "test-suite",
+      workflow: fakeWorkflow({ mediaType: "research-paper" }),
     });
 
     expect(result.exitCode).toBe(0);
@@ -100,6 +128,7 @@ describe("ingestUrlCommand", () => {
     expect(data.category).toBe("research");
     expect(data.source).toBe("test-suite");
     expect(data.ingestedType).toBe("research-paper");
+    expect(data.ingestedWorkflow).toBe("agentic");
     expect(String(data.tags)).toContain("paper");
     expect(data.doi).toBe("10.1000/test-doi");
     expect(String(data.authors)).toContain("Jane Smith");
@@ -110,9 +139,11 @@ describe("ingestUrlCommand", () => {
   it("creates unique slugs on repeated ingestion", async () => {
     const first = await ingestUrlCommand(store, "https://example.com/blog/repeat", {
       fetchFn: fetchWith(ARTICLE_HTML),
+      workflow: fakeWorkflow({ mediaType: "article" }),
     });
     const second = await ingestUrlCommand(store, "https://example.com/blog/repeat", {
       fetchFn: fetchWith(ARTICLE_HTML),
+      workflow: fakeWorkflow({ mediaType: "article" }),
     });
 
     expect(first.exitCode).toBe(0);
@@ -126,6 +157,7 @@ describe("ingestUrlCommand", () => {
 
     const result = await ingestUrlCommand(nestedStore, "https://example.com/research/abc", {
       fetchFn: fetchWith(PAPER_HTML),
+      workflow: fakeWorkflow({ mediaType: "research-paper" }),
     });
 
     expect(result.exitCode).toBe(0);
@@ -137,9 +169,39 @@ describe("ingestUrlCommand", () => {
       fetchFn: fetchWith(ARTICLE_HTML),
       kind: "web-page",
       dryRun: true,
+      workflow: fakeWorkflow({ mediaType: "article" }),
     });
 
     expect(result.exitCode).toBe(0);
     expect(result.output).toContain("Detected content type: web-page");
+  });
+
+  it("fails when agent mode is required and no ingest agent runtime is available", async () => {
+    const env = { ...process.env, MEMEX_PI_BIN: join(tmpDir, "missing-pi") } as NodeJS.ProcessEnv;
+
+    const result = await ingestUrlCommand(store, "https://example.com/needs-agent", {
+      fetchFn: fetchWith(ARTICLE_HTML),
+      memexHome: tmpDir,
+      agentMode: "required",
+      env,
+    });
+
+    expect(result.exitCode).toBe(1);
+    expect(result.output).toContain("MEMEX_AGENT_UNAVAILABLE");
+  });
+
+  it("falls back deterministically when agent mode is optional", async () => {
+    const env = { ...process.env, MEMEX_PI_BIN: join(tmpDir, "missing-pi") } as NodeJS.ProcessEnv;
+
+    const result = await ingestUrlCommand(store, "https://example.com/fallback", {
+      fetchFn: fetchWith(ARTICLE_HTML),
+      memexHome: tmpDir,
+      agentMode: "optional",
+      env,
+    });
+
+    expect(result.exitCode).toBe(0);
+    expect(result.output).toContain("Workflow mode: deterministic");
+    expect(result.output).toContain("Warning:");
   });
 });

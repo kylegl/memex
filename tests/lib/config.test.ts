@@ -175,4 +175,30 @@ describe("readConfig", () => {
     const config = await readConfig(tmpDir);
     expect(config.memexProposalAgentThinking).toBeUndefined();
   });
+
+  it("reads memex ingest agent config", async () => {
+    await writeFile(
+      join(tmpDir, ".memexrc"),
+      JSON.stringify({
+        memexIngestAgentName: "agent-ingest",
+        memexIngestAgentModel: "model-ingest",
+        memexIngestAgentThinking: "low",
+      }),
+    );
+
+    const config = await readConfig(tmpDir);
+    expect(config.memexIngestAgentName).toBe("agent-ingest");
+    expect(config.memexIngestAgentModel).toBe("model-ingest");
+    expect(config.memexIngestAgentThinking).toBe("low");
+  });
+
+  it("drops invalid memex ingest thinking values", async () => {
+    await writeFile(
+      join(tmpDir, ".memexrc"),
+      JSON.stringify({ memexIngestAgentThinking: "ultra" }),
+    );
+
+    const config = await readConfig(tmpDir);
+    expect(config.memexIngestAgentThinking).toBeUndefined();
+  });
 });

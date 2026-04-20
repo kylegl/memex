@@ -138,4 +138,27 @@ describe("MCP server", () => {
     expect(readResult.isError).toBe(true);
   });
 
+  it("memex_ingest_url supports agent_mode input", async () => {
+    await setup();
+
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async () =>
+      new Response(
+        `<!doctype html><html><head><meta property="og:type" content="article"><title>MCP Agent Mode</title></head><body><article><p>Article body text.</p></article></body></html>`,
+        { status: 200, headers: { "content-type": "text/html" } },
+      );
+
+    try {
+      const result = await client.callTool({
+        name: "memex_ingest_url",
+        arguments: { url: "https://example.com/agent-mode", dry_run: true, agent_mode: "off" },
+      });
+      expect(result.isError).toBeFalsy();
+      const text = (result.content as Array<{ text: string }>)[0].text;
+      expect(text).toContain("Workflow mode: deterministic");
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
 });

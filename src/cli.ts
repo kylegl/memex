@@ -287,13 +287,21 @@ program
   .option("--slug <slug>", "Override target slug")
   .option("--title <title>", "Override extracted title")
   .option("--kind <kind>", "Content kind: auto|research-paper|article|youtube-video|web-page", "auto")
-  .action(async (url: string, opts: { dryRun?: boolean; slug?: string; title?: string; kind?: string }) => {
+  .option("--agent-mode <mode>", "Agent mode: required|optional|off", "required")
+  .action(async (url: string, opts: { dryRun?: boolean; slug?: string; title?: string; kind?: string; agentMode?: string; agent_mode?: string }) => {
     const home = await resolveMemexHome();
     const store = await getStore();
 
     const kind = parseIngestKind(opts.kind);
     if (!kind) {
       process.stderr.write(`Invalid --kind value '${opts.kind}'. Use one of: auto, research-paper, article, youtube-video, web-page\n`);
+      exit(1);
+      return;
+    }
+
+    const agentMode = parseIngestAgentMode(opts.agentMode ?? opts.agent_mode);
+    if (!agentMode) {
+      process.stderr.write(`Invalid --agent-mode value '${opts.agentMode}'. Use one of: required, optional, off\n`);
       exit(1);
       return;
     }
@@ -305,6 +313,8 @@ program
         title: opts.title,
         kind,
         source: "ingest-url",
+        memexHome: home,
+        agentMode,
         afterWrite: async ({ slug: writtenSlug }) => {
           if (!isAutoClassifyEnabled()) return;
           const classify = await classifySlugsForEvent(store, home, [writtenSlug], "post-import");
@@ -490,5 +500,11 @@ function parseIngestKind(value: string | undefined): IngestKindSelection | null 
   if (value === "auto" || value === "research-paper" || value === "article" || value === "youtube-video" || value === "web-page") {
     return value;
   }
+  return null;
+}
+
+function parseIngestAgentMode(value: string | undefined): "required" | "optional" | "off" | null {
+  if (!value) return "required";
+  if (value === "required" || value === "optional" || value === "off") return value;
   return null;
 }
