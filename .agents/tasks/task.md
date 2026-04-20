@@ -24,4 +24,4 @@ Last updated: 2026-04-08
 
 ## Completed
 
-- None currently.
+- `agentify-memex` — `.agents/tasks/.completed/agentify-memex/` (plan completed)
