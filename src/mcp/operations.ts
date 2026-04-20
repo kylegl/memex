@@ -12,6 +12,7 @@ import { stringifyFrontmatter } from "../lib/parser.js";
 import { GitAdapter, readSyncConfig } from "../lib/sync.js";
 import { flomoPushCommand, parseFlomoHtml } from "../commands/flomo.js";
 import type { FlomoMemo } from "../commands/flomo.js";
+import { ingestUrlCommand } from "../commands/ingest.js";
 import { z } from "zod";
 
 export function registerOperations(
@@ -49,6 +50,23 @@ export function registerOperations(
       const indexResult = await readCommand(store, "index");
       if (indexResult.success) {
         return { content: [{ type: "text" as const, text: indexResult.content! }] };
+      }
+
+      // semantic hub fallback for nested mode when root index is absent
+      const fallbackCandidates = [
+        "core/core",
+        "project/project",
+        "notes/notes",
+        "reference/reference",
+        "pi/pi",
+        "memex/memex",
+        "dawarich/dawarich",
+      ];
+      for (const candidate of fallbackCandidates) {
+        const fallback = await readCommand(store, candidate);
+        if (fallback.success) {
+          return { content: [{ type: "text" as const, text: fallback.content! }] };
+        }
       }
     }
 
@@ -157,6 +175,43 @@ export function registerOperations(
     await hooks.run("post", "push");
 
     return { content: [{ type: "text" as const, text: result.message }], isError: !result.success };
+  });
+
+  // ---- memex_ingest_url ----
+  server.registerTool("memex_ingest_url", {
+    description: "Ingest a URL into memex. Detects content type (research paper/article/youtube/web), extracts key metadata, and creates a card with summary + key points.",
+    inputSchema: z.object({
+      url: z.string().describe("HTTP(S) URL to ingest"),
+      dry_run: z.boolean().optional().describe("Preview without writing card"),
+      slug: z.string().optional().describe("Optional slug override"),
+      title: z.string().optional().describe("Optional title override"),
+      kind: z.enum(["auto", "research-paper", "article", "youtube-video", "web-page"]).optional().describe("Optional content-type override"),
+    }),
+  }, async ({ url, dry_run, slug, title, kind }) => {
+    await hooks.run("pre", "import");
+
+    try {
+      const result = await ingestUrlCommand(store, url, {
+        dryRun: dry_run,
+        slug,
+        title,
+        kind: kind ?? "auto",
+        source: getClientName(),
+        afterWrite: async ({ slug: writtenSlug }) => {
+          if (!isAutoClassifyEnabled()) return;
+          const classify = await classifySlugsForEvent(store, home, [writtenSlug], "post-import");
+          if (!classify.success) throw new Error(classify.output);
+        },
+      });
+
+      if (!dry_run && result.exitCode === 0) {
+        await hooks.run("post", "import");
+      }
+
+      return { content: [{ type: "text" as const, text: result.output }], isError: result.exitCode !== 0 };
+    } catch (error) {
+      return { content: [{ type: "text" as const, text: (error as Error).message }], isError: true };
+    }
   });
 
   // ---- flomo_push ----

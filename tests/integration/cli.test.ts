@@ -272,4 +272,46 @@ Nested content.`;
     const proposalJson = await readFile(join(proposalsDir, files[0]), "utf-8");
     expect(proposalJson).toContain('"targetPath":"cards/alpha.md"');
   });
+
+  it("ingest-url dry-run detects content type without writing", async () => {
+    const scriptPath = join(tmpDir, "fake-fetch.mjs");
+    await writeFile(
+      scriptPath,
+      [
+        "globalThis.fetch = async () => new Response(`<!doctype html><html><head><meta property=\"og:type\" content=\"article\"><title>Demo Article</title></head><body><article><p>A practical ingestion article for memex workflows.</p></article></body></html>`, { status: 200, headers: { 'content-type': 'text/html' } });",
+        `process.argv = ['node', ${JSON.stringify(CLI_PATH)}, ...process.argv.slice(2)];`,
+        `await import(${JSON.stringify(CLI_PATH)});`,
+      ].join("\n"),
+      "utf-8",
+    );
+
+    const { stdout } = await run(`node ${scriptPath} ingest-url https://example.com/post --dry-run`, { env });
+    expect(stdout).toContain("Detected content type: article");
+
+    const cards = await readdir(join(tmpDir, "cards"));
+    expect(cards).toHaveLength(0);
+  });
+
+  it("ingest-url writes a card when not dry-run", async () => {
+    const scriptPath = join(tmpDir, "fake-fetch-write.mjs");
+    await writeFile(
+      scriptPath,
+      [
+        "globalThis.fetch = async () => new Response(`<!doctype html><html><head><meta name=\"citation_title\" content=\"Agent Memory Paper\"><meta name=\"citation_abstract\" content=\"This paper studies long-term memory for coding agents.\"><meta name=\"citation_doi\" content=\"10.4242/example\"></head><body><p>Fallback body.</p></body></html>`, { status: 200, headers: { 'content-type': 'text/html' } });",
+        `process.argv = ['node', ${JSON.stringify(CLI_PATH)}, ...process.argv.slice(2)];`,
+        `await import(${JSON.stringify(CLI_PATH)});`,
+      ].join("\n"),
+      "utf-8",
+    );
+
+    const { stdout } = await run(`node ${scriptPath} ingest-url https://example.org/paper`, { env });
+    expect(stdout).toContain("Detected content type: research-paper");
+
+    const cards = await readdir(join(tmpDir, "cards"));
+    expect(cards.length).toBe(1);
+    const raw = await readFile(join(tmpDir, "cards", cards[0]), "utf-8");
+    expect(raw).toContain("title: Agent Memory Paper");
+    expect(raw).toContain("category: research");
+    expect(raw).toContain("ingestedType: research-paper");
+  });
 });

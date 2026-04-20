@@ -138,6 +138,18 @@ describe("readConfig", () => {
     expect(config.openaiApiKey).toBe("sk-test");
   });
 
+  it("reads semanticHubSlugs flag from config", async () => {
+    await writeFile(join(tmpDir, ".memexrc"), JSON.stringify({ nestedSlugs: true, semanticHubSlugs: true }));
+    const config = await readConfig(tmpDir);
+    expect(config).toEqual({ nestedSlugs: true, semanticHubSlugs: true });
+  });
+
+  it("treats non-boolean semanticHubSlugs as undefined", async () => {
+    await writeFile(join(tmpDir, ".memexrc"), JSON.stringify({ nestedSlugs: true, semanticHubSlugs: "yes" }));
+    const config = await readConfig(tmpDir);
+    expect(config).toEqual({ nestedSlugs: true, semanticHubSlugs: undefined });
+  });
+
   it("reads memex proposal agent config", async () => {
     await writeFile(
       join(tmpDir, ".memexrc"),

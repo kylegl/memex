@@ -1,3 +1,9 @@
+---
+id: memex-index-proggressive-disclosure
+status: blocked
+updated: 2026-04-20T05:32:13Z
+---
+
 # Progress
 
 ## Status

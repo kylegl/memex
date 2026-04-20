@@ -5,6 +5,13 @@ import type { EmbeddingProviderType } from "./embeddings.js";
 
 export interface MemexConfig {
   nestedSlugs: boolean;
+  /**
+   * When true, nested navigation MOCs are generated as <folder>/<leaf>.md
+   * and legacy <folder>/index.md links are preserved via redirect stubs.
+   *
+   * Default: false (legacy index-based MOCs)
+   */
+  semanticHubSlugs?: boolean;
   searchDirs?: string[];
   openaiApiKey?: string;
   openaiBaseUrl?: string;
@@ -38,6 +45,7 @@ export async function readConfig(memexHome: string): Promise<MemexConfig> {
 
     return {
       nestedSlugs: parsed.nestedSlugs === true,
+      semanticHubSlugs: parsed.semanticHubSlugs === true ? true : undefined,
       searchDirs: Array.isArray(parsed.searchDirs) ? parsed.searchDirs : undefined,
       openaiApiKey: typeof parsed.openaiApiKey === "string" ? parsed.openaiApiKey : undefined,
       openaiBaseUrl: typeof parsed.openaiBaseUrl === "string" ? parsed.openaiBaseUrl : undefined,

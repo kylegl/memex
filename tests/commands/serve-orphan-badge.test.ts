@@ -12,6 +12,8 @@ describe("serve-ui orphan badge logic", () => {
 
     // Ensure orphan metric uses actionableCards, not raw cards.length
     expect(html).toContain("const actionableCards = cards.filter(c => !isGeneratedNavIndex(c));");
+    // Ensure labels prefer title over raw slug/id
+    expect(html).toContain("const labelText = n.title || n.id;");
     expect(html).toContain("const actionableConnectedCount = actionableCards.filter(c => connected.has(c.slug)).length;");
     expect(html).toContain("const orphanCount = Math.max(0, actionableCards.length - actionableConnectedCount);");
 

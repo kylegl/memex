@@ -1,7 +1,8 @@
 import { readFile } from "node:fs/promises";
-import { basename, relative } from "node:path";
+import { relative } from "node:path";
 import { stringifyFrontmatter, parseFrontmatter } from "../core/parser.js";
 import { CardStore } from "../core/store.js";
+import { readConfig } from "../core/config.js";
 import { OrganizationStore, resolveOrganizationFields, type OrganizationProposal, type RoutingRule } from "../core/organization.js";
 
 type SkippedIndex = { slug: string; reason: string };
@@ -39,6 +40,7 @@ type RenderedIndexTarget = {
   slug: string;
   title: string;
   body: string;
+  legacyAliasSlugs?: string[];
 };
 
 type RelatedLinkRef = {
@@ -49,6 +51,7 @@ type RelatedLinkRef = {
 export type BuildIndexResult = {
   rootSlug: "index";
   nested: boolean;
+  semanticHubSlugs: boolean;
   created: string[];
   updated: string[];
   unchanged: string[];
@@ -64,6 +67,8 @@ export async function buildIndexCommand(
   options: { memexHome?: string } = {},
 ): Promise<BuildIndexResult> {
   const nested = store.isNestedSlugsEnabled();
+  const config = options.memexHome ? await readConfig(options.memexHome) : { nestedSlugs: nested };
+  const semanticHubSlugs = nested && config.semanticHubSlugs === true;
   const scanned = await store.scanAll();
   const cardInfos = await Promise.all(scanned.map((card) => readCardInfo(store, card.slug, card.path)));
   const bySlug = new Map<string, ScannedCardInfo>();
@@ -80,19 +85,10 @@ export async function buildIndexCommand(
     proposals = await orgStore.listProposals();
   }
 
-  const mixedModeArtifacts: string[] = [];
-  if (!nested) {
-    for (const card of cardInfos) {
-      const isNestedIndexPath = card.relativePath.includes("/") && basename(card.relativePath) === "index.md";
-      if (isNestedIndexPath && card.isGeneratedNavigationIndex) {
-        mixedModeArtifacts.push(card.relativePath.replace(/\.md$/, ""));
-      }
-    }
-    mixedModeArtifacts.sort();
-  }
+  const mixedModeArtifacts = computeMixedModeArtifacts(cardInfos, nested);
 
   const targets = nested
-    ? buildNestedTargets(cardInfos, rules, proposals)
+    ? buildNestedTargets(cardInfos, rules, proposals, semanticHubSlugs)
     : [buildFlatRootTarget(cardInfos, rules, proposals)];
 
   const created: string[] = [];
@@ -103,7 +99,7 @@ export async function buildIndexCommand(
   for (const target of targets) {
     const existing = bySlug.get(target.slug);
 
-    if (target.slug.endsWith("/index") && existing && !existing.isGeneratedNavigationIndex) {
+    if (target.slug !== "index" && existing && !existing.isGeneratedNavigationIndex) {
       skipped.push({
         slug: target.slug,
         reason: "existing non-generated nested index",
@@ -141,15 +137,54 @@ export async function buildIndexCommand(
 
     if (isUnchanged) {
       unchanged.push(target.slug);
-      continue;
+    } else {
+      const output = stringifyFrontmatter(target.body, desiredData);
+      await store.writeCard(target.slug, output);
+      if (existing) {
+        updated.push(target.slug);
+      } else {
+        created.push(target.slug);
+      }
     }
 
-    const output = stringifyFrontmatter(target.body, desiredData);
-    await store.writeCard(target.slug, output);
-    if (existing) {
-      updated.push(target.slug);
-    } else {
-      created.push(target.slug);
+    // Maintain legacy aliases as redirect stubs for semantic hub slugs.
+    if (target.legacyAliasSlugs && target.legacyAliasSlugs.length > 0) {
+      for (const aliasSlug of target.legacyAliasSlugs) {
+        const aliasExisting = bySlug.get(aliasSlug);
+        if (aliasExisting && !aliasExisting.isGeneratedNavigationIndex) {
+          skipped.push({ slug: aliasSlug, reason: "existing non-generated nested index" });
+          continue;
+        }
+
+        const aliasCreatedDate = aliasExisting && aliasExisting.isGeneratedNavigationIndex
+          ? normalizeDate(aliasExisting.created, today)
+          : today;
+        const aliasBody = renderRedirectStub(target.slug);
+        const aliasData = {
+          title: `${hubDisplayLabel(dirnameFromSlug(aliasSlug), false)} Legacy Alias`,
+          created: aliasCreatedDate,
+          modified: today,
+          source: ORGANIZE_SOURCE,
+          generated: NAV_INDEX_GENERATED,
+          type: "redirect",
+        };
+
+        const aliasUnchanged = aliasExisting
+          ? areManagedIndexContentsEqual(aliasExisting, aliasData, aliasBody)
+          : false;
+
+        if (aliasUnchanged) {
+          unchanged.push(aliasSlug);
+          continue;
+        }
+
+        await store.writeCard(aliasSlug, stringifyFrontmatter(aliasBody, aliasData));
+        if (aliasExisting) {
+          updated.push(aliasSlug);
+        } else {
+          created.push(aliasSlug);
+        }
+      }
     }
   }
 
@@ -161,6 +196,7 @@ export async function buildIndexCommand(
   return {
     rootSlug: "index",
     nested,
+    semanticHubSlugs,
     created,
     updated,
     unchanged,
@@ -207,8 +243,14 @@ function buildNestedTargets(
   cardInfos: ScannedCardInfo[],
   rules: RoutingRule[],
   proposals: OrganizationProposal[],
+  semanticHubSlugs: boolean,
 ): RenderedIndexTarget[] {
-  const cardsForNavigation = cardInfos.filter((card) => !isIndexSlug(card.slug) && !isRedirectCard(card));
+  const cardsForNavigation = cardInfos.filter((card) => {
+    if (isLegacyIndexSlug(card.slug)) return false;
+    if (card.isGeneratedNavigationIndex && isSemanticHubSlugPattern(card.slug)) return false;
+    if (isRedirectCard(card)) return false;
+    return true;
+  });
 
   const topFolders = new Set<string>();
   const rootCards: CardLinkRef[] = [];
@@ -251,10 +293,15 @@ function buildNestedTargets(
   const targets: RenderedIndexTarget[] = [];
   const topLevelFolders = [...topFolders].sort();
 
+  const topHubLookup = new Map<string, string>();
+  for (const folder of topLevelFolders) {
+    topHubLookup.set(folder, semanticHubSlugs ? semanticHubSlugForFolder(folder) : `${folder}/index`);
+  }
+
   targets.push({
     slug: "index",
     title: "Keyword Index",
-    body: renderRootNestedBody(topLevelFolders, sortCardRefs(rootCards), titleBySlug),
+    body: renderRootNestedBody(topLevelFolders, sortCardRefs(rootCards), titleBySlug, topHubLookup, semanticHubSlugs),
   });
 
   for (const folder of [...tree.keys()].sort()) {
@@ -263,10 +310,27 @@ function buildNestedTargets(
     const cards = sortCardRefs(
       [...node.cards.entries()].map(([linkSlug, sortKey]) => ({ linkSlug, sortKey })),
     );
+
+    const hubSlug = semanticHubSlugs ? semanticHubSlugForFolder(folder) : `${folder}/index`;
+    const childHubLookup = new Map<string, string>();
+    for (const childFolder of childFolders) {
+      childHubLookup.set(childFolder, semanticHubSlugs ? semanticHubSlugForFolder(childFolder) : `${childFolder}/index`);
+    }
+
     targets.push({
-      slug: `${folder}/index`,
-      title: `${titleCase(lastSegment(folder))} Index`,
-      body: renderNestedFolderBody(childFolders, cards, titleBySlug, buildRelatedLinks(folder, titleBySlug, proposals)),
+      slug: hubSlug,
+      title: hubDisplayLabel(folder, semanticHubSlugs),
+      body: renderNestedFolderBody(
+        childFolders,
+        cards,
+        titleBySlug,
+        buildRelatedLinks(folder, titleBySlug, proposals, semanticHubSlugs),
+        childHubLookup,
+        semanticHubSlugs,
+      ),
+      legacyAliasSlugs: semanticHubSlugs
+        ? (hubSlug.endsWith("/index") ? undefined : [`${folder}/index`])
+        : undefined,
     });
   }
 
@@ -280,6 +344,7 @@ function buildFlatRootTarget(
 ): RenderedIndexTarget {
   const cards = cardInfos
     .filter((card) => card.slug !== "index" && !isRedirectCard(card))
+    .filter((card) => !(card.isGeneratedNavigationIndex && card.relativePath.includes("/")))
     .sort((a, b) => a.slug.localeCompare(b.slug));
 
   const categoryMap = new Map<string, string[]>();
@@ -324,13 +389,26 @@ function buildFlatRootTarget(
   };
 }
 
-function renderRootNestedBody(topLevelFolders: string[], rootCards: CardLinkRef[], titleBySlug: Map<string, string>): string {
+function renderRedirectStub(hubSlug: string): string {
+  return `Relocated to [[${hubSlug}]].`;
+}
+
+function renderRootNestedBody(
+  topLevelFolders: string[],
+  rootCards: CardLinkRef[],
+  titleBySlug: Map<string, string>,
+  childHubLookup: Map<string, string> = new Map(),
+  semanticHubSlugs: boolean = false,
+): string {
   const sections: string[] = [];
 
   if (topLevelFolders.length > 0) {
     sections.push(
       "## Navigation\n" + topLevelFolders
-        .map((folder) => `- [[${folder}/index]] — ${titleCase(lastSegment(folder))} Index`)
+        .map((folder) => {
+          const hubSlug = childHubLookup.get(folder) || `${folder}/index`;
+          return `- [[${hubSlug}]] — ${hubDisplayLabel(folder, semanticHubSlugs)}`;
+        })
         .join("\n"),
     );
   }
@@ -351,13 +429,18 @@ function renderNestedFolderBody(
   cards: CardLinkRef[],
   titleBySlug: Map<string, string>,
   relatedLinks: RelatedLinkRef[] = [],
+  childHubLookup: Map<string, string> = new Map(),
+  semanticHubSlugs: boolean = false,
 ): string {
   const sections: string[] = [];
 
   if (childFolders.length > 0) {
     sections.push(
       "## Navigation\n" + childFolders
-        .map((folder) => `- [[${folder}/index]] — ${titleCase(lastSegment(folder))} Index`)
+        .map((folder) => {
+          const hubSlug = childHubLookup.get(folder) || `${folder}/index`;
+          return `- [[${hubSlug}]] — ${hubDisplayLabel(folder, semanticHubSlugs)}`;
+        })
         .join("\n"),
     );
   }
@@ -518,6 +601,7 @@ function buildRelatedLinks(
   folder: string,
   titleBySlug: Map<string, string>,
   proposals: OrganizationProposal[],
+  semanticHubSlugs: boolean,
 ): RelatedLinkRef[] {
   const related: RelatedLinkRef[] = [];
 
@@ -527,8 +611,11 @@ function buildRelatedLinks(
     );
 
     if (hasPatchrightCards) {
+      const patchrightHub = semanticHubSlugs
+        ? "reference/patchright/patchright"
+        : "reference/patchright/index";
       related.push({
-        linkSlug: "reference/patchright/index",
+        linkSlug: patchrightHub,
         label: "Patchright reference",
       });
     }
@@ -556,8 +643,39 @@ function buildRelatedLinks(
   return related;
 }
 
-function isIndexSlug(slug: string): boolean {
+function computeMixedModeArtifacts(cardInfos: ScannedCardInfo[], nested: boolean): string[] {
+  if (nested) return [];
+  return cardInfos
+    .filter((card) => card.relativePath.includes("/") && card.isGeneratedNavigationIndex)
+    .map((card) => card.relativePath.replace(/\.md$/, ""))
+    .filter((value, index, arr) => arr.indexOf(value) === index)
+    .sort();
+}
+
+function isLegacyIndexSlug(slug: string): boolean {
   return slug === "index" || slug.endsWith("/index");
+}
+
+function isSemanticHubSlugPattern(slug: string): boolean {
+  if (!slug.includes("/")) return false;
+  const parts = slug.split("/").filter(Boolean);
+  if (parts.length < 2) return false;
+  return parts[parts.length - 1] === parts[parts.length - 2];
+}
+
+function semanticHubSlugForFolder(folder: string): string {
+  return `${folder}/${lastSegment(folder)}`;
+}
+
+function hubDisplayLabel(folder: string, semantic: boolean): string {
+  const leaf = titleCase(lastSegment(folder));
+  return semantic ? `${leaf} Hub` : `${leaf} Index`;
+}
+
+function dirnameFromSlug(slug: string): string {
+  const normalized = slug.replace(/\\/g, "/");
+  const idx = normalized.lastIndexOf("/");
+  return idx >= 0 ? normalized.slice(0, idx) : "";
 }
 
 function isRedirectCard(card: Pick<ScannedCardInfo, "type">): boolean {

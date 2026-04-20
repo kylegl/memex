@@ -107,11 +107,11 @@ export class CardStore {
     return this.nestedSlugs;
   }
 
-  async resolve(slug: string): Promise<string | null> {
+  private async resolveExact(slug: string): Promise<string | null> {
     const normalised = slug.replace(/\\/g, "/");
 
     // In flat mode, "index" always resolves to cards/index.md only.
-    // This avoids stale nested */index.md artifacts hijacking recall.
+    // This avoids stale nested artifacts hijacking recall.
     if (!this.nestedSlugs && normalised === "index") {
       const rootIndexPath = join(this.cardsDir, "index.md");
       try {
@@ -125,6 +125,26 @@ export class CardStore {
     const cards = await this.scanAll();
     const found = cards.find((c) => c.slug === normalised);
     return found?.path ?? null;
+  }
+
+  async resolve(slug: string): Promise<string | null> {
+    const normalised = slug.replace(/\\/g, "/");
+    const exact = await this.resolveExact(normalised);
+    if (exact) return exact;
+
+    // In nested mode, keep backwards compatibility for legacy */index links
+    // by falling back to semantic hubs (<folder>/<leaf>) when present.
+    if (this.nestedSlugs && normalised.endsWith("/index")) {
+      const folder = normalised.slice(0, -"/index".length);
+      if (folder.length > 0) {
+        const segments = folder.split("/").filter(Boolean);
+        const leaf = segments[segments.length - 1];
+        const semantic = `${folder}/${leaf}`;
+        return this.resolveExact(semantic);
+      }
+    }
+
+    return null;
   }
 
   async readCard(slug: string): Promise<string> {
@@ -143,7 +163,7 @@ export class CardStore {
 
   async writeCard(slug: string, content: string): Promise<void> {
     validateSlug(slug);
-    const existing = await this.resolve(slug);
+    const existing = await this.resolveExact(slug);
     const targetPath = existing ?? join(this.cardsDir, `${slug}.md`);
     this.assertSafePath(targetPath);
     await mkdir(dirname(targetPath), { recursive: true });
@@ -156,7 +176,7 @@ export class CardStore {
 
   async archiveCard(slug: string): Promise<void> {
     validateSlug(slug);
-    const path = await this.resolve(slug);
+    const path = await this.resolveExact(slug);
     if (!path) {
       try {
         await readFile(join(this.archiveDir, `${slug}.md`));

@@ -3,7 +3,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { createMemexServer } from "../../src/mcp/server.js";
 import { CardStore } from "../../src/core/store.js";
-import { mkdtemp, rm, mkdir, writeFile } from "node:fs/promises";
+import { mkdtemp, rm, mkdir, writeFile, readFile, readdir } from "node:fs/promises";
 import { join, dirname } from "node:path";
 import { tmpdir } from "node:os";
 
@@ -62,6 +62,19 @@ describe("High-level operations", () => {
     const text = (result.content as Array<{ text: string }>)[0].text;
     expect(text).toContain("## Root");
     expect(text).not.toContain("[[notes/sub/index]]");
+  });
+
+  it("memex_recall falls back to semantic top-level hub when root index is absent", async () => {
+    await setup({
+      "core/core": "---\ntitle: Core Hub\ncreated: 2026-01-01\nsource: organize\ngenerated: navigation-index\n---\n## Navigation\n- [[core/system/system]]",
+      "core/system/system": "---\ntitle: System Hub\ncreated: 2026-01-01\nsource: organize\ngenerated: navigation-index\n---\n## Cards\n- [[card-a]]",
+      "card-a": "---\ntitle: Card A\ncreated: 2026-01-01\nsource: claude-code\n---\nSome content",
+    });
+
+    const result = await client.callTool({ name: "memex_recall", arguments: {} });
+    const text = (result.content as Array<{ text: string }>)[0].text;
+    expect(text).toContain("core    Core Hub");
+    expect(text).toContain("system  System Hub");
   });
 
   it("memex_recall returns card list when no index", async () => {
@@ -149,9 +162,42 @@ describe("High-level operations", () => {
     expect(names).toContain("memex_organize");
     expect(names).toContain("memex_pull");
     expect(names).toContain("memex_push");
+    expect(names).toContain("memex_ingest_url");
     expect(names).not.toContain("memex_init");
 
     const organizeTool = tools.find((t) => t.name === "memex_organize");
     expect(organizeTool?.description).toContain("refresh generated navigation indexes");
+  });
+
+  it("memex_ingest_url writes card content", async () => {
+    await setup();
+
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async () =>
+      new Response(
+        `<!doctype html><html><head><meta name="citation_title" content="MCP Ingest Paper"><meta name="citation_abstract" content="This paper is used to verify memex_ingest_url."><meta name="citation_doi" content="10.1234/mcp-test"></head><body><p>Fallback body.</p></body></html>`,
+        { status: 200, headers: { "content-type": "text/html" } },
+      );
+
+    try {
+      const result = await client.callTool({
+        name: "memex_ingest_url",
+        arguments: { url: "https://example.org/mcp-paper" },
+      });
+      expect(result.isError).toBeFalsy();
+      const text = (result.content as Array<{ text: string }>)[0].text;
+      expect(text).toContain("Detected content type: research-paper");
+
+      const cards = await readdir(join(tmpDir, "cards"));
+      const slug = cards.find((name) => name.startsWith("paper-mcp-ingest-paper"));
+      expect(slug).toBeDefined();
+
+      const raw = await readFile(join(tmpDir, "cards", slug!), "utf-8");
+      expect(raw).toContain("title: MCP Ingest Paper");
+      expect(raw).toContain("category: research");
+      expect(raw).toContain("ingestedType: research-paper");
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   });
 });

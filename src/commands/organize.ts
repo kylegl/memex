@@ -279,6 +279,7 @@ export async function organizeCommand(
   const indexResult = await buildIndexCommand(store, { memexHome: options.memexHome });
   const indexLines: string[] = [
     `- mode: ${indexResult.nested ? "nested" : "flat"}`,
+    `- hub slugs: ${indexResult.nested ? (indexResult.semanticHubSlugs ? "semantic" : "index") : "root-only"}`,
     `- created: ${indexResult.created.length}`,
     `- updated: ${indexResult.updated.length}`,
     `- unchanged: ${indexResult.unchanged.length}`,

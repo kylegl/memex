@@ -206,6 +206,7 @@ describe("organize command", () => {
 
     expect(result.output).toContain("## Index Rebuild");
     expect(result.output).toContain("- mode: nested");
+    expect(result.output).toContain("- hub slugs: index");
     expect(result.output).toContain("- created: 4");
   });
 
@@ -314,6 +315,7 @@ describe("organize command", () => {
     expect(projectPos).toBeLessThan(uncategorizedPos);
 
     expect(result.output).toContain("- mode: flat");
+    expect(result.output).toContain("- hub slugs: root-only");
     expect(result.output).toContain("- mixed-mode artifacts: 0");
   });
 

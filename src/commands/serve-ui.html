@@ -1773,7 +1773,8 @@ body::-webkit-scrollbar { display: none; }
         ctx.textAlign = 'center';
         ctx.textBaseline = 'top';
         const labelY = n.y + n.displayR + 8 / cam.zoom;
-        const textW = ctx.measureText(n.id).width;
+        const labelText = n.title || n.id;
+        const textW = ctx.measureText(labelText).width;
         if (isSel || isHov) {
           const padX = 6 / cam.zoom;
           const padY = 3 / cam.zoom;
@@ -1785,7 +1786,7 @@ body::-webkit-scrollbar { display: none; }
           ctx.strokeRect(n.x - textW / 2 - padX, labelY - padY, textW + padX * 2, boxH);
         }
         ctx.fillStyle = 'rgba(255,255,255,' + (isSel || isHov ? 0.95 : la) + ')';
-        ctx.fillText(n.id, n.x, labelY);
+        ctx.fillText(labelText, n.x, labelY);
       }
     });
 
