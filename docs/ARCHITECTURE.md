@@ -22,9 +22,10 @@
                    │
 ┌──────────────────▼──────────────────────────┐
 │           MCP Server (src/mcp/)             │
-│  13 tools: recall, retro, organize,         │
-│  search, read, write, links, archive,       │
-│  classify, review, maintain, pull, push     │
+│  14 tools: recall, retro, organize,         │
+│  search, read, write, ingest_url, links,    │
+│  archive, classify, review, maintain,       │
+│  pull, push                                 │
 └──────────────────┬──────────────────────────┘
                    │
 ┌──────────────────▼──────────────────────────┐
@@ -70,6 +71,7 @@ src/
 │   ├── serve.ts              # Web UI server (serve-ui.html)
 │   ├── sync.ts               # CLI sync orchestrator (init, pull, push, auto toggle)
 │   ├── import.ts             # Import dispatcher
+│   ├── ingest.ts             # URL ingestion with content-type detection + extraction
 │   ├── doctor.ts             # Health checks (slug collision detection)
 │   └── migrate.ts            # Config migration (enable nestedSlugs)
 ├── core/
@@ -173,6 +175,7 @@ need server-side revocation via [[blacklist-pattern]].
 | `memex_write` | Write/update card with full content |
 | `memex_links` | Link stats (per-card or global) |
 | `memex_archive` | Move card to archive |
+| `memex_ingest_url` | Ingest URL content into a card (auto type detection, metadata, key points) |
 | `memex_classify` | Generate bounded organization proposals |
 | `memex_review` | List/approve/reject organization proposals |
 | `memex_maintain` | Emit bounded maintenance proposals |

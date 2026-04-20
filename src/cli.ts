@@ -24,6 +24,7 @@ import { classifyCommand, classifyRecentCommand, classifySlugsForEvent, isAutoCl
 import { reviewCommand } from "./commands/review.js";
 import { maintainCommand } from "./commands/maintain.js";
 import { flomoConfigCommand, flomoPushCommand, flomoImportCommand } from "./commands/flomo.js";
+import { ingestUrlCommand, type IngestKindSelection } from "./commands/ingest.js";
 
 async function getStore(opts?: { nested?: boolean }): Promise<CardStore> {
   const home = await resolveMemexHome();
@@ -280,6 +281,45 @@ program
   });
 
 program
+  .command("ingest-url <url>")
+  .description("Ingest a URL and create a memory card with detected content type and key points")
+  .option("--dry-run", "Preview inferred metadata and card content without writing")
+  .option("--slug <slug>", "Override target slug")
+  .option("--title <title>", "Override extracted title")
+  .option("--kind <kind>", "Content kind: auto|research-paper|article|youtube-video|web-page", "auto")
+  .action(async (url: string, opts: { dryRun?: boolean; slug?: string; title?: string; kind?: string }) => {
+    const home = await resolveMemexHome();
+    const store = await getStore();
+
+    const kind = parseIngestKind(opts.kind);
+    if (!kind) {
+      process.stderr.write(`Invalid --kind value '${opts.kind}'. Use one of: auto, research-paper, article, youtube-video, web-page\n`);
+      exit(1);
+      return;
+    }
+
+    try {
+      const result = await ingestUrlCommand(store, url, {
+        dryRun: opts.dryRun,
+        slug: opts.slug,
+        title: opts.title,
+        kind,
+        source: "ingest-url",
+        afterWrite: async ({ slug: writtenSlug }) => {
+          if (!isAutoClassifyEnabled()) return;
+          const classify = await classifySlugsForEvent(store, home, [writtenSlug], "post-import");
+          if (!classify.success) throw new Error(classify.output);
+        },
+      });
+      if (result.output) process.stdout.write(result.output + "\n");
+      exit(result.exitCode);
+    } catch (error) {
+      process.stderr.write((error as Error).message + "\n");
+      exit(1);
+    }
+  });
+
+program
   .command("doctor")
   .description("Check memex health and configuration")
   .option("--check-collisions", "Check for slug collisions in basename mode")
@@ -444,3 +484,11 @@ flomo
   });
 
 program.parse();
+
+function parseIngestKind(value: string | undefined): IngestKindSelection | null {
+  if (!value) return "auto";
+  if (value === "auto" || value === "research-paper" || value === "article" || value === "youtube-video" || value === "web-page") {
+    return value;
+  }
+  return null;
+}
