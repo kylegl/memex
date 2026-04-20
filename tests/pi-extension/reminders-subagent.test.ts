@@ -24,10 +24,17 @@ type RegisteredTool = {
   execute: (toolCallId: string, params: unknown) => Promise<unknown>;
 };
 
+type RegisteredCommand = {
+  description?: string;
+  handler: (args: string, ctx: { ui: { notify: (message: string, level: string) => void } }) => Promise<void>;
+};
+
 class MockPi {
   private handlers = new Map<string, HookHandler[]>();
   private tools = new Map<string, RegisteredTool>();
+  private commands = new Map<string, RegisteredCommand>();
   public sendMessageCalls: Array<{ message: unknown; options: unknown }> = [];
+  public sentUserMessages: string[] = [];
 
   on(event: string, handler: HookHandler) {
     const existing = this.handlers.get(event) ?? [];
@@ -39,12 +46,16 @@ class MockPi {
     this.tools.set(tool.name, tool);
   }
 
-  registerCommand() {
-    // Not needed for these tests.
+  registerCommand(name: string, command: RegisteredCommand) {
+    this.commands.set(name, command);
   }
 
   sendMessage(message: unknown, options: unknown) {
     this.sendMessageCalls.push({ message, options });
+  }
+
+  sendUserMessage(message: string) {
+    this.sentUserMessages.push(message);
   }
 
   getHook(event: string): HookHandler {
@@ -59,6 +70,16 @@ class MockPi {
     const tool = this.tools.get(name);
     if (!tool) throw new Error(`Tool not registered: ${name}`);
     return tool;
+  }
+
+  hasCommand(name: string): boolean {
+    return this.commands.has(name);
+  }
+
+  getCommand(name: string): RegisteredCommand {
+    const command = this.commands.get(name);
+    if (!command) throw new Error(`Command not registered: ${name}`);
+    return command;
   }
 }
 
@@ -118,5 +139,40 @@ describe("memex pi-extension reminder injection", () => {
     await agentEnd({}, {});
 
     expect(pi.sendMessageCalls).toHaveLength(0);
+  });
+
+  it("registers memex-ingest slash command", async () => {
+    const memexExtension = await loadExtension();
+    const pi = new MockPi();
+    memexExtension(pi as never);
+
+    expect(pi.hasCommand("memex-ingest")).toBe(true);
+  });
+
+  it("memex-ingest command has URL-only usage", async () => {
+    const memexExtension = await loadExtension();
+    const pi = new MockPi();
+    memexExtension(pi as never);
+
+    const command = pi.getCommand("memex-ingest");
+    expect(command.description).toContain("/memex-ingest <url>");
+
+    const notifications: Array<{ message: string; level: string }> = [];
+    await command.handler("", {
+      ui: {
+        notify: (message: string, level: string) => notifications.push({ message, level }),
+      },
+    });
+
+    expect(notifications.some((n) => n.message.includes("Usage: /memex-ingest <url>"))).toBe(true);
+  });
+
+  it("/memex supports ingest subcommand with inferred type", async () => {
+    const memexExtension = await loadExtension();
+    const pi = new MockPi();
+    memexExtension(pi as never);
+
+    const command = pi.getCommand("memex");
+    expect(command.description).toContain("/memex ingest <url>");
   });
 });

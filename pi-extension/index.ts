@@ -25,6 +25,7 @@
  *
  * Commands:
  *   /memex         – show memex status and card count
+ *   /memex-ingest  – ingest a URL with inferred media type (agentic workflow)
  *   /memex-serve   – open visual timeline UI
  *   /memex-sync    – sync cards via git
  */
@@ -424,9 +425,38 @@ export default function memexExtension(pi: ExtensionAPI) {
   // Commands
   // -----------------------------------------------------------------------
 
+  async function runMemexIngest(url: string, ctx: { ui: { notify: (message: string, level: "info" | "warning" | "error") => void } }) {
+    const res = await memex(["ingest-url", url, "--agent-mode", "required"]);
+    if (!res.ok) {
+      ctx.ui.notify(res.stderr || "memex ingest failed", "error");
+      return;
+    }
+
+    const out = res.stdout || "Ingest complete.";
+    const lines = out.split("\n").map((l) => l.trim()).filter(Boolean);
+    ctx.ui.notify(lines[0] || "Ingest complete.", "info");
+    pi.sendUserMessage(out);
+  }
+
   pi.registerCommand("memex", {
-    description: "Show memex status and card count",
-    handler: async (_args, ctx) => {
+    description: "Show memex status and card count. Also supports: /memex ingest <url>",
+    handler: async (args, ctx) => {
+      const input = args.trim();
+      if (input.startsWith("ingest ")) {
+        const url = input.slice("ingest ".length).trim().split(/\s+/).filter(Boolean)[0];
+        if (!url) {
+          ctx.ui.notify("Usage: /memex ingest <url>", "error");
+          return;
+        }
+        await runMemexIngest(url, ctx as any);
+        return;
+      }
+
+      if (input.length > 0) {
+        ctx.ui.notify("Unknown /memex subcommand. Supported: /memex, /memex ingest <url>", "error");
+        return;
+      }
+
       const res = await memex(["search"]);
       if (!res.ok) {
         ctx.ui.notify(
@@ -437,6 +467,19 @@ export default function memexExtension(pi: ExtensionAPI) {
       }
       const lines = res.stdout.split("\n").filter((l) => l.trim());
       ctx.ui.notify(`Memex: ${lines.length} cards found`, "info");
+    },
+  });
+
+  pi.registerCommand("memex-ingest", {
+    description: "Ingest URL content with inferred media type: /memex-ingest <url>",
+    handler: async (args, ctx) => {
+      const url = args.trim().split(/\s+/).filter(Boolean)[0];
+      if (!url) {
+        ctx.ui.notify("Usage: /memex-ingest <url>", "error");
+        return;
+      }
+
+      await runMemexIngest(url, ctx as any);
     },
   });
 
