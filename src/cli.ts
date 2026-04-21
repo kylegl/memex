@@ -287,7 +287,7 @@ program
   .option("--slug <slug>", "Override target slug")
   .option("--title <title>", "Override extracted title")
   .option("--kind <kind>", "Content kind: auto|research-paper|article|youtube-video|web-page", "auto")
-  .option("--agent-mode <mode>", "Agent mode: required|optional|off", "required")
+  .option("--agent-mode <mode>", "Agent mode: optional|required|off", "optional")
   .action(async (url: string, opts: { dryRun?: boolean; slug?: string; title?: string; kind?: string; agentMode?: string; agent_mode?: string }) => {
     const home = await resolveMemexHome();
     const store = await getStore();
@@ -504,7 +504,7 @@ function parseIngestKind(value: string | undefined): IngestKindSelection | null 
 }
 
 function parseIngestAgentMode(value: string | undefined): "required" | "optional" | "off" | null {
-  if (!value) return "required";
+  if (!value) return "optional";
   if (value === "required" || value === "optional" || value === "off") return value;
   return null;
 }

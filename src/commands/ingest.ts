@@ -14,7 +14,7 @@ import { writeCommand } from "./write.js";
 
 export type IngestContentKind = IngestMediaType;
 export type IngestKindSelection = "auto" | IngestContentKind;
-export type IngestAgentMode = "required" | "optional" | "off";
+export type IngestAgentMode = "optional" | "required" | "off";
 
 export interface IngestUrlOptions {
   dryRun?: boolean;
@@ -147,7 +147,7 @@ export async function ingestUrlCommand(
   const fetchFn = options.fetchFn ?? globalThis.fetch;
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const maxContentChars = options.maxContentChars ?? DEFAULT_MAX_CONTENT_CHARS;
-  const agentMode = options.agentMode ?? "required";
+  const agentMode = options.agentMode ?? "optional";
 
   let snapshot: FetchSnapshot;
   try {
@@ -308,6 +308,8 @@ export async function ingestUrlCommand(
     ...signals.authors,
   ]);
 
+  const workflowMode = describeWorkflowMode(workflow, workflowWarnings);
+
   const frontmatter: Record<string, unknown> = {
     title: resolvedTitle,
     created: today,
@@ -318,7 +320,7 @@ export async function ingestUrlCommand(
     ingestedType: selectedKind,
     ingestedHost: snapshot.host,
     ingestedAt: today,
-    ingestedWorkflow: workflow ? "agentic" : "deterministic",
+    ingestedWorkflow: workflowMode,
     ingestedMediaTypeSource: mediaTypeSource,
   };
 
@@ -339,7 +341,7 @@ export async function ingestUrlCommand(
     signals,
     snapshot,
     now: today,
-    workflowMode: workflow ? "agentic" : "deterministic",
+    workflowMode,
     mediaTypeSource,
     classifyDecision,
     synthDecision,
@@ -354,7 +356,7 @@ export async function ingestUrlCommand(
         "[dry-run] Ingest preview",
         `Detected content type: ${selectedKind}`,
         `Media type source: ${mediaTypeSource}`,
-        `Workflow mode: ${workflow ? "agentic" : "deterministic"}`,
+        `Workflow mode: ${workflowMode}`,
         `Target slug: ${resolvedSlug}`,
         `Category: ${finalCategory}`,
         `Tags: ${mergedTags.join(", ")}`,
@@ -393,7 +395,7 @@ export async function ingestUrlCommand(
       `Ingested URL into '${resolvedSlug}'.`,
       `Detected content type: ${selectedKind}`,
       `Media type source: ${mediaTypeSource}`,
-      `Workflow mode: ${workflow ? "agentic" : "deterministic"}`,
+      `Workflow mode: ${workflowMode}`,
       `Category: ${finalCategory}`,
       `Tags: ${mergedTags.join(", ")}`,
       ...workflowWarnings.map((w) => `Warning: ${w}`),
@@ -402,6 +404,11 @@ export async function ingestUrlCommand(
     exitCode: 0,
     ingestedSlugs: [resolvedSlug],
   };
+}
+
+function describeWorkflowMode(workflow?: IngestAgentWorkflow, warnings: string[] = []): "agentic" | "deterministic" {
+  if (!workflow) return "deterministic";
+  return warnings.length > 0 ? "deterministic" : "agentic";
 }
 
 async function resolveWorkflow(options: IngestUrlOptions, agentMode: IngestAgentMode): Promise<WorkflowResolution> {

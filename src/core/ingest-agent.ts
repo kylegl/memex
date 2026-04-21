@@ -1,7 +1,18 @@
-import { execFile as execFileCb } from "node:child_process";
+import { execFile as execFileCb, spawn } from "node:child_process";
+import { readFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { promisify } from "node:util";
 
 const execFile = promisify(execFileCb);
+const DEFAULT_PI_SETTINGS_PATH = join(homedir(), ".pi", "agent", "settings.json");
+const LEGACY_INGEST_MODEL_FALLBACK = "openai-codex/gpt-3-codex";
+
+interface PiSettingsSnapshot {
+  defaultProvider?: string;
+  defaultModel?: string;
+  extensions: string[];
+}
 
 export const INGEST_AGENT_THINKING_VALUES = ["low", "medium", "high"] as const;
 
@@ -144,8 +155,16 @@ export function resolveIngestAgentConfig(
   },
   env: NodeJS.ProcessEnv = process.env,
 ): IngestAgentConfig {
+  const settings = readPiSettings(env);
+  const defaultModelFromSettings = resolveDefaultModelFromSettings(settings);
+
   const name = firstNonEmpty(env.MEMEX_INGEST_AGENT_NAME, config.memexIngestAgentName, "memex-ingest-agent");
-  const model = firstNonEmpty(env.MEMEX_INGEST_AGENT_MODEL, config.memexIngestAgentModel, "openai-codex/gpt-3-codex");
+  const model = firstNonEmpty(
+    env.MEMEX_INGEST_AGENT_MODEL,
+    config.memexIngestAgentModel,
+    defaultModelFromSettings,
+    LEGACY_INGEST_MODEL_FALLBACK,
+  );
   const thinking = firstNonEmpty(env.MEMEX_INGEST_AGENT_THINKING, config.memexIngestAgentThinking, "medium");
 
   if (!name) {
@@ -244,6 +263,14 @@ export function createPiIngestWorkflow(
   };
 }
 
+export function resolveIngestAgentExtensionSource(
+  model: string,
+  env: NodeJS.ProcessEnv = process.env,
+): string | undefined {
+  const settings = readPiSettings(env);
+  return pickExtensionSource(model, env, settings);
+}
+
 async function runPiJson(
   agent: IngestAgentConfig,
   systemPrompt: string,
@@ -252,30 +279,35 @@ async function runPiJson(
 ): Promise<unknown> {
   const executable = (env.MEMEX_PI_BIN || "pi").trim();
   const userPrompt = JSON.stringify(payload, null, 2);
+  const timeoutMs = resolveIngestAgentTimeoutMs(env);
 
-  let stdout: string;
-  let stderr: string;
+  const extensionSource = resolveIngestAgentExtensionSource(agent.model, env);
+
+  const args = [
+    "--print",
+    "--no-session",
+    "--no-skills",
+    "--no-extensions",
+    ...(extensionSource ? ["--extension", extensionSource] : []),
+    "--model",
+    agent.model,
+    "--thinking",
+    agent.thinking,
+    "--append-system-prompt",
+    systemPrompt,
+    userPrompt,
+  ];
+
+  let result: {
+    stdout: string;
+    stderr: string;
+    code: number | null;
+    signal: NodeJS.Signals | null;
+    timedOut: boolean;
+  };
+
   try {
-    ({ stdout, stderr } = await execFile(
-      executable,
-      [
-        "--print",
-        "--no-session",
-        "--no-extensions",
-        "--no-skills",
-        "--model",
-        agent.model,
-        "--thinking",
-        agent.thinking,
-        "--append-system-prompt",
-        systemPrompt,
-        userPrompt,
-      ],
-      {
-        env,
-        maxBuffer: 1024 * 1024,
-      },
-    ));
+    result = await runPiProcess(executable, args, env, timeoutMs);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     throw new IngestAgentConfigError(
@@ -284,11 +316,26 @@ async function runPiJson(
     );
   }
 
-  const output = String(stdout || "").trim();
+  if (result.timedOut) {
+    throw new IngestAgentConfigError(
+      "MEMEX_AGENT_UNAVAILABLE",
+      `MEMEX_AGENT_UNAVAILABLE: ingest agent '${agent.name}' timed out after ${timeoutMs}ms`,
+    );
+  }
+
+  if (result.code !== 0) {
+    const diagnostics = trimForError([result.stderr, result.stdout].filter(Boolean).join("\n"));
+    throw new IngestAgentConfigError(
+      "MEMEX_AGENT_UNAVAILABLE",
+      `MEMEX_AGENT_UNAVAILABLE: ingest agent '${agent.name}' exited with code ${result.code ?? "null"}${result.signal ? ` (signal ${result.signal})` : ""}${diagnostics ? `: ${diagnostics}` : ""}`,
+    );
+  }
+
+  const output = String(result.stdout || result.stderr || "").trim();
   if (!output) {
     throw new IngestAgentConfigError(
       "MEMEX_AGENT_UNAVAILABLE",
-      `MEMEX_AGENT_UNAVAILABLE: ingest agent '${agent.name}' returned empty output${stderr ? ` (${stderr.trim()})` : ""}`,
+      `MEMEX_AGENT_UNAVAILABLE: ingest agent '${agent.name}' returned empty output`,
     );
   }
 
@@ -377,4 +424,126 @@ function isThinking(value: string): value is IngestAgentThinking {
 
 function isErrorEnvelope(value: unknown): value is { error: string } {
   return !!value && typeof value === "object" && typeof (value as { error?: unknown }).error === "string";
+}
+
+function resolveIngestAgentTimeoutMs(env: NodeJS.ProcessEnv): number {
+  const raw = Number(env.MEMEX_INGEST_AGENT_TIMEOUT_MS || "");
+  if (!Number.isFinite(raw) || raw <= 0) return 90_000;
+  return Math.min(Math.max(Math.floor(raw), 1_000), 180_000);
+}
+
+function readPiSettings(env: NodeJS.ProcessEnv): PiSettingsSnapshot | undefined {
+  const path = firstNonEmpty(env.MEMEX_PI_SETTINGS_PATH, env.PI_SETTINGS_PATH, DEFAULT_PI_SETTINGS_PATH);
+  if (!path) return undefined;
+
+  try {
+    const parsed = JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>;
+    const extensions = Array.isArray(parsed.extensions)
+      ? parsed.extensions
+        .filter((value): value is string => typeof value === "string")
+        .map((value) => value.trim())
+        .filter(Boolean)
+      : [];
+
+    return {
+      defaultProvider: typeof parsed.defaultProvider === "string" ? parsed.defaultProvider.trim() : undefined,
+      defaultModel: typeof parsed.defaultModel === "string" ? parsed.defaultModel.trim() : undefined,
+      extensions,
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+function resolveDefaultModelFromSettings(settings?: PiSettingsSnapshot): string | undefined {
+  if (!settings) return undefined;
+
+  const provider = firstNonEmpty(settings.defaultProvider);
+  const model = firstNonEmpty(settings.defaultModel);
+  if (!model) return undefined;
+  if (model.includes("/")) return model;
+  if (!provider) return undefined;
+  return `${provider}/${model}`;
+}
+
+function pickExtensionSource(
+  model: string,
+  env: NodeJS.ProcessEnv,
+  settings?: PiSettingsSnapshot,
+): string | undefined {
+  const explicit = firstNonEmpty(env.MEMEX_INGEST_AGENT_EXTENSION);
+  if (explicit) return explicit;
+  const provider = firstNonEmpty(model.split("/")[0]).toLowerCase();
+  if (!provider) return undefined;
+
+  const extensions = settings?.extensions ?? [];
+  if (extensions.length === 0) return undefined;
+
+  const providerNeedle = normalizeToken(provider);
+  if (!providerNeedle) return undefined;
+
+  const matched = extensions.find((source) => normalizeToken(source).includes(providerNeedle));
+  return matched;
+}
+
+function normalizeToken(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+async function runPiProcess(
+  executable: string,
+  args: string[],
+  env: NodeJS.ProcessEnv,
+  timeoutMs: number,
+): Promise<{ stdout: string; stderr: string; code: number | null; signal: NodeJS.Signals | null; timedOut: boolean }> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(executable, args, {
+      env,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+
+    let stdout = "";
+    let stderr = "";
+    let settled = false;
+    let timedOut = false;
+
+    const timer = setTimeout(() => {
+      timedOut = true;
+      child.kill("SIGTERM");
+    }, timeoutMs);
+
+    child.stdout.on("data", (data: Buffer) => {
+      stdout += data.toString();
+    });
+
+    child.stderr.on("data", (data: Buffer) => {
+      stderr += data.toString();
+    });
+
+    child.on("error", (error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      reject(error);
+    });
+
+    child.on("close", (code, signal) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve({
+        stdout: stdout.trim(),
+        stderr: stderr.trim(),
+        code,
+        signal,
+        timedOut,
+      });
+    });
+  });
+}
+
+function trimForError(value: string, max = 360): string {
+  const cleaned = value.replace(/\s+/g, " ").trim();
+  if (cleaned.length <= max) return cleaned;
+  return `${cleaned.slice(0, max - 1).trimEnd()}…`;
 }

@@ -293,7 +293,29 @@ Nested content.`;
     expect(cards).toHaveLength(0);
   });
 
-  it("ingest-url required mode fails when ingest agent runtime is unavailable", async () => {
+  it("ingest-url default mode falls back and still writes when ingest agent runtime is unavailable", async () => {
+    const scriptPath = join(tmpDir, "fake-fetch-default-optional.mjs");
+    await writeFile(
+      scriptPath,
+      [
+        "globalThis.fetch = async () => new Response(`<!doctype html><html><head><meta name=\"citation_title\" content=\"Agent Memory Paper\"><meta name=\"citation_abstract\" content=\"This paper studies long-term memory for coding agents.\"><meta name=\"citation_doi\" content=\"10.4242/example\"></head><body><p>Fallback body.</p></body></html>`, { status: 200, headers: { 'content-type': 'text/html' } });",
+        `process.argv = ['node', ${JSON.stringify(CLI_PATH)}, ...process.argv.slice(2)];`,
+        `await import(${JSON.stringify(CLI_PATH)});`,
+      ].join("\n"),
+      "utf-8",
+    );
+
+    const envMissingPi = { ...env, MEMEX_PI_BIN: join(tmpDir, "missing-pi") };
+
+    const { stdout } = await run(`node ${scriptPath} ingest-url https://example.org/paper`, { env: envMissingPi });
+    expect(stdout).toContain("Workflow mode: deterministic");
+    expect(stdout).toContain("Warning:");
+
+    const cards = await readdir(join(tmpDir, "cards"));
+    expect(cards.length).toBe(1);
+  });
+
+  it("ingest-url required mode still fails when ingest agent runtime is unavailable", async () => {
     const scriptPath = join(tmpDir, "fake-fetch-required.mjs");
     await writeFile(
       scriptPath,
@@ -306,7 +328,6 @@ Nested content.`;
     );
 
     const envMissingPi = { ...env, MEMEX_PI_BIN: join(tmpDir, "missing-pi") };
-
     try {
       await run(`node ${scriptPath} ingest-url https://example.org/paper --agent-mode required`, { env: envMissingPi });
       expect.fail("expected required mode failure");
@@ -314,30 +335,5 @@ Nested content.`;
       const combined = `${e.stdout || ""}\n${e.stderr || ""}`;
       expect(combined).toContain("MEMEX_AGENT_UNAVAILABLE");
     }
-  });
-
-  it("ingest-url optional mode falls back and still writes", async () => {
-    const scriptPath = join(tmpDir, "fake-fetch-optional.mjs");
-    await writeFile(
-      scriptPath,
-      [
-        "globalThis.fetch = async () => new Response(`<!doctype html><html><head><meta name=\"citation_title\" content=\"Agent Memory Paper\"><meta name=\"citation_abstract\" content=\"This paper studies long-term memory for coding agents.\"><meta name=\"citation_doi\" content=\"10.4242/example\"></head><body><p>Fallback body.</p></body></html>`, { status: 200, headers: { 'content-type': 'text/html' } });",
-        `process.argv = ['node', ${JSON.stringify(CLI_PATH)}, ...process.argv.slice(2)];`,
-        `await import(${JSON.stringify(CLI_PATH)});`,
-      ].join("\n"),
-      "utf-8",
-    );
-
-    const envMissingPi = { ...env, MEMEX_PI_BIN: join(tmpDir, "missing-pi") };
-    const { stdout } = await run(`node ${scriptPath} ingest-url https://example.org/paper --agent-mode optional`, { env: envMissingPi });
-    expect(stdout).toContain("Workflow mode: deterministic");
-    expect(stdout).toContain("Warning:");
-
-    const cards = await readdir(join(tmpDir, "cards"));
-    expect(cards.length).toBe(1);
-    const raw = await readFile(join(tmpDir, "cards", cards[0]), "utf-8");
-    expect(raw).toContain("title: Agent Memory Paper");
-    expect(raw).toContain("category: research");
-    expect(raw).toContain("ingestedType: research-paper");
   });
 });

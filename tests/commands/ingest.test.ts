@@ -190,13 +190,12 @@ describe("ingestUrlCommand", () => {
     expect(result.output).toContain("MEMEX_AGENT_UNAVAILABLE");
   });
 
-  it("falls back deterministically when agent mode is optional", async () => {
+  it("falls back deterministically when default agent mode is used", async () => {
     const env = { ...process.env, MEMEX_PI_BIN: join(tmpDir, "missing-pi") } as NodeJS.ProcessEnv;
 
     const result = await ingestUrlCommand(store, "https://example.com/fallback", {
       fetchFn: fetchWith(ARTICLE_HTML),
       memexHome: tmpDir,
-      agentMode: "optional",
       env,
     });
 

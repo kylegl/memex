@@ -186,7 +186,7 @@ export function registerOperations(
       slug: z.string().optional().describe("Optional slug override"),
       title: z.string().optional().describe("Optional title override"),
       kind: z.enum(["auto", "research-paper", "article", "youtube-video", "web-page"]).optional().describe("Optional content-type override"),
-      agent_mode: z.enum(["required", "optional", "off"]).optional().describe("Agent mode: required (default), optional fallback, or off"),
+      agent_mode: z.enum(["required", "optional", "off"]).optional().describe("Agent mode: optional (default), required strict mode, or off"),
     }),
   }, async ({ url, dry_run, slug, title, kind, agent_mode }) => {
     await hooks.run("pre", "import");
@@ -199,7 +199,7 @@ export function registerOperations(
         kind: kind ?? "auto",
         source: getClientName(),
         memexHome: home,
-        agentMode: agent_mode ?? "required",
+        agentMode: agent_mode ?? "optional",
         afterWrite: async ({ slug: writtenSlug }) => {
           if (!isAutoClassifyEnabled()) return;
           const classify = await classifySlugsForEvent(store, home, [writtenSlug], "post-import");
