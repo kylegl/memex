@@ -82,7 +82,7 @@ src/
 │   ├── sync.ts               # GitAdapter, SyncConfig, autoSync/autoFetch
 │   ├── config.ts             # .memexrc reader
 │   ├── organization.ts       # Proposal/rule persistence + routing precedence + agent config
-│   ├── ingest-agent.ts       # Pi runtime bridge for ingest classifier/synthesizer agent workflow
+│   ├── ingest-agent.ts       # Pi runtime bridge for ingest classifier/synthesizer agent workflow (timeouts + optional targeted extension load)
 │   ├── embeddings.ts         # OpenAI/Local/Ollama providers, cache, cosine similarity
 │   └── utils.ts              # semverSort utility
 ├── importers/
@@ -176,7 +176,7 @@ need server-side revocation via [[blacklist-pattern]].
 | `memex_write` | Write/update card with full content |
 | `memex_links` | Link stats (per-card or global) |
 | `memex_archive` | Move card to archive |
-| `memex_ingest_url` | Agentic URL ingest (media classify -> raw-data interpretation -> synthesized card) |
+| `memex_ingest_url` | Agentic URL ingest (media classify -> raw-data interpretation -> synthesized card). Runtime can isolate extensions with `--no-extensions` and selectively re-enable one via `--extension` (e.g., kg-multicodex). |
 | `memex_classify` | Generate bounded organization proposals |
 | `memex_review` | List/approve/reject organization proposals |
 | `memex_maintain` | Emit bounded maintenance proposals |

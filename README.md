@@ -91,7 +91,11 @@ If you've set up sync, `memex serve` opens [memra.vercel.app](https://memra.verc
 memex search [query]          # search cards, or list all
 memex read <slug>             # read a card
 memex write <slug>            # write a card (stdin)
-memex ingest-url <url>        # agentic ingest: classify -> extract -> synthesize into a card
+memex ingest-url <url>        # agentic ingest (default agent-mode=optional): classify -> extract -> synthesize into a card
+# Optional env for ingest agent runtime:
+# MEMEX_INGEST_AGENT_MODEL=multicodex/gpt-5.3-codex
+# MEMEX_INGEST_AGENT_EXTENSION=/home/you/repos/kg-multicodex
+# MEMEX_INGEST_AGENT_TIMEOUT_MS=90000
 memex links [slug]            # link graph stats
 memex archive <slug>          # archive a card
 memex organize [--since DATE] # analyze graph health + refresh navigation indexes
