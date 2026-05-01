@@ -203,6 +203,26 @@ describe("stringifyFrontmatter", () => {
     expect(parsed.content.trim()).toBe(body);
   });
 
+  it("serializes arrays as YAML lists", () => {
+    const serialized = stringifyFrontmatter("Body", {
+      title: "Tag card",
+      tags: ["fieldtheory", "bookmark", "x-bookmark"],
+    });
+
+    expect(serialized).toContain("tags:\n  - fieldtheory\n  - bookmark\n  - x-bookmark");
+
+    const parsed = parseFrontmatter(serialized);
+    expect(parsed.data.tags).toEqual(["fieldtheory", "bookmark", "x-bookmark"]);
+  });
+
+  it("serializes Date values as YYYY-MM-DD strings", () => {
+    const serialized = stringifyFrontmatter("Body", {
+      created: new Date("2026-04-19T00:00:00.000Z"),
+    });
+
+    expect(serialized).toContain("created: 2026-04-19");
+  });
+
   it("handles combined special characters", () => {
     const result = stringifyFrontmatter("Content", {
       title: "it's a [test]: #1 & *important*",
