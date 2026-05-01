@@ -32,6 +32,7 @@ export interface Importer {
 
 // --- Importer registry ---
 
+import { FieldTheoryImporter } from "./fieldtheory.js";
 import { OpenClawImporter } from "./openclaw.js";
 
 const importers: Record<string, Importer> = {};
@@ -41,6 +42,7 @@ function register(importer: Importer) {
 }
 
 register(new OpenClawImporter());
+register(new FieldTheoryImporter());
 // register(new ObsidianImporter());  // future
 // register(new NotionImporter());    // future
 

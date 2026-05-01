@@ -252,7 +252,7 @@ program
 
 program
   .command("import [source]")
-  .description("Import memories from other tools (openclaw, ...)")
+  .description("Import memories from other tools (openclaw, fieldtheory, ...)")
   .option("--dry-run", "Preview without writing")
   .option("--dir <path>", "Override source directory")
   .action(async (source: string | undefined, opts: { dryRun?: boolean; dir?: string }) => {
